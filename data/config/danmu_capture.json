@@ -1,0 +1,9 @@
+{
+  "config": {
+    "enabled": false,
+    "windowTitle": "WordShot - 直播话术提词器",
+    "captureIntervalMs": 2000,
+    "useOCR": false,
+    "ocrEngine": "tesseract"
+  }
+}

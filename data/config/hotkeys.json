@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "hotkeys": {
+    "switch_script_1": "1",
+    "switch_script_2": "2",
+    "switch_script_3": "3",
+    "switch_script_4": "4",
+    "switch_script_5": "5",
+    "switch_script_6": "6",
+    "switch_script_7": "7",
+    "switch_script_8": "8",
+    "switch_script_9": "9",
+    "preview_up": "Up",
+    "preview_down": "Down",
+    "toggle_pause": "Space",
+    "show_help": "?",
+    "hide_help": "Escape"
+  }
+}
