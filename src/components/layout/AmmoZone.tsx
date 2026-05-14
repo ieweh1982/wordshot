@@ -29,6 +29,7 @@ function ScrollingCard({
   isSelected,
   isPlaying,
   onTogglePlay,
+  onResizeStart,
   cardWidth,
 }: {
   slot: AmmoSlotConfig;
@@ -37,6 +38,7 @@ function ScrollingCard({
   isSelected: boolean;
   isPlaying: boolean;
   onTogglePlay: () => void;
+  onResizeStart: (e: React.MouseEvent, slotId: string) => void;
   cardWidth?: number;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -141,7 +143,10 @@ function ScrollingCard({
         onTogglePlay();
       }}
     >
-      <div className="ammo-card__resize-handle" />
+      <div
+        className="ammo-card__resize-handle"
+        onMouseDown={(e) => onResizeStart(e, slot.slotId)}
+      />
       <div className="ammo-card__header">
         <span className="ammo-card__hotkey">{slot.hotkey}</span>
         <span className="ammo-card__label">{CATEGORY_LABELS[slot.sourceCategory]}</span>
@@ -394,6 +399,7 @@ export function AmmoZone({ className = '' }: AmmoZoneProps) {
               isSelected={isSelected}
               isPlaying={isPlaying}
               onTogglePlay={() => toggleSlotPlay(slot.slotId)}
+              onResizeStart={handleResizeStart}
               cardWidth={cardWidth}
             />
           );
