@@ -116,6 +116,12 @@
   color: #ffffff;
 }
 
+.tag-filter--more {
+  background: var(--bg-tertiary, #2a2a2a);
+  color: var(--accent-color, #4a9eff);
+  border-style: dashed;
+}
+
 .clear-filters {
   padding: 4px 10px;
   border: none;

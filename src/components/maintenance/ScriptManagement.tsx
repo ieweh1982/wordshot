@@ -67,6 +67,9 @@ export default function ScriptManagement() {
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  const [showMoreTags, setShowMoreTags] = useState(false);
+
+  const MAX_VISIBLE_TAGS = 20;
 
   // Load scripts from service on mount
   useEffect(() => {
@@ -438,7 +441,7 @@ export default function ScriptManagement() {
               </div>
               {allTags.length > 0 && (
                 <div className="tag-filters">
-                  {allTags.map(tag => (
+                  {(showMoreTags ? allTags : allTags.slice(0, MAX_VISIBLE_TAGS)).map(tag => (
                     <button
                       key={tag}
                       className={`tag-filter ${filters.tags.includes(tag) ? 'tag-filter--active' : ''}`}
@@ -447,6 +450,16 @@ export default function ScriptManagement() {
                       {tag}
                     </button>
                   ))}
+                  {!showMoreTags && allTags.length > MAX_VISIBLE_TAGS && (
+                    <button className="tag-filter tag-filter--more" onClick={() => setShowMoreTags(true)}>
+                      更多 ({allTags.length - MAX_VISIBLE_TAGS})
+                    </button>
+                  )}
+                  {showMoreTags && allTags.length > MAX_VISIBLE_TAGS && (
+                    <button className="tag-filter tag-filter--more" onClick={() => setShowMoreTags(false)}>
+                      收起
+                    </button>
+                  )}
                   {filters.tags.length > 0 && (
                     <button className="clear-filters" onClick={clearFilters}>
                       清除筛选
