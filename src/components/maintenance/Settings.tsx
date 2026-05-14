@@ -71,6 +71,17 @@ const DEFAULT_OTHER_SETTINGS: OtherSettings = {
   autoSaveLayout: true,
 };
 
+// Display settings interface
+interface DisplaySettings {
+  ammoFontSize: number;
+  scriptFontSize: number;
+}
+
+const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+  ammoFontSize: 13,
+  scriptFontSize: 28,
+};
+
 // Deduplication settings interface
 interface DeduplicationSettings {
   enabled: boolean;
@@ -102,8 +113,11 @@ export const Settings: React.FC<Props> = ({ className }) => {
   // Other settings state
   const [otherSettings, setOtherSettings] = useState<OtherSettings>(DEFAULT_OTHER_SETTINGS);
 
+  // Display settings state
+  const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(DEFAULT_DISPLAY_SETTINGS);
+
   // Active tab
-  const [activeTab, setActiveTab] = useState<'hotkey' | 'transparency' | 'dedup' | 'other' | 'about'>('hotkey');
+  const [activeTab, setActiveTab] = useState<'hotkey' | 'transparency' | 'dedup' | 'display' | 'other' | 'about'>('hotkey');
 
   // Load all settings on mount
   useEffect(() => {
@@ -143,6 +157,16 @@ export const Settings: React.FC<Props> = ({ className }) => {
     if (savedScriptOpacity) setScriptOpacity(parseFloat(savedScriptOpacity));
     if (savedAmmoOpacity) setAmmoOpacity(parseFloat(savedAmmoOpacity));
     if (savedDanmuOpacity) setDanmuOpacity(parseFloat(savedDanmuOpacity));
+
+    // Load display settings
+    const savedDisplay = localStorage.getItem('wordshot-display-settings');
+    if (savedDisplay) {
+      try {
+        setDisplaySettings(JSON.parse(savedDisplay));
+      } catch (e) {
+        console.error('Failed to parse display settings:', e);
+      }
+    }
   }, []);
 
   // Save dedup settings
@@ -160,6 +184,14 @@ export const Settings: React.FC<Props> = ({ className }) => {
   // Save transparency
   const saveTransparency = useCallback((type: 'script' | 'ammo' | 'danmu', value: number) => {
     localStorage.setItem(`wordshot-${type}-opacity`, String(value));
+  }, []);
+
+  // Save display settings
+  const saveDisplaySettings = useCallback((settings: DisplaySettings) => {
+    setDisplaySettings(settings);
+    localStorage.setItem('wordshot-display-settings', JSON.stringify(settings));
+    // Dispatch event to notify components
+    window.dispatchEvent(new CustomEvent('display-settings-changed', { detail: settings }));
   }, []);
 
   // Handle hotkey editing
@@ -357,6 +389,49 @@ export const Settings: React.FC<Props> = ({ className }) => {
     </div>
   );
 
+  // Render display tab
+  const renderDisplayTab = () => (
+    <div className="settings__section">
+      <div className="settings__section-header">
+        <h3 className="settings__section-title">字体大小</h3>
+      </div>
+
+      <div className="settings__slider-group">
+        <div className="settings__slider-item">
+          <label className="settings__slider-label">
+            <span>弹药带字体</span>
+            <span className="settings__slider-value">{displaySettings.ammoFontSize}px</span>
+          </label>
+          <input
+            type="range"
+            className="settings__slider"
+            min="10"
+            max="24"
+            step="1"
+            value={displaySettings.ammoFontSize}
+            onChange={(e) => saveDisplaySettings({ ...displaySettings, ammoFontSize: parseInt(e.target.value) })}
+          />
+        </div>
+
+        <div className="settings__slider-item">
+          <label className="settings__slider-label">
+            <span>主提词区字体</span>
+            <span className="settings__slider-value">{displaySettings.scriptFontSize}px</span>
+          </label>
+          <input
+            type="range"
+            className="settings__slider"
+            min="16"
+            max="72"
+            step="2"
+            value={displaySettings.scriptFontSize}
+            onChange={(e) => saveDisplaySettings({ ...displaySettings, scriptFontSize: parseInt(e.target.value) })}
+          />
+        </div>
+      </div>
+    </div>
+  );
+
   // Render dedup tab
   const renderDedupTab = () => (
     <div className="settings__section">
@@ -534,6 +609,12 @@ export const Settings: React.FC<Props> = ({ className }) => {
           去重配置
         </button>
         <button
+          className={`settings__tab ${activeTab === 'display' ? 'is-active' : ''}`}
+          onClick={() => setActiveTab('display')}
+        >
+          字体大小
+        </button>
+        <button
           className={`settings__tab ${activeTab === 'other' ? 'is-active' : ''}`}
           onClick={() => setActiveTab('other')}
         >
@@ -551,6 +632,7 @@ export const Settings: React.FC<Props> = ({ className }) => {
         {activeTab === 'hotkey' && renderHotkeyTab()}
         {activeTab === 'transparency' && renderTransparencyTab()}
         {activeTab === 'dedup' && renderDedupTab()}
+        {activeTab === 'display' && renderDisplayTab()}
         {activeTab === 'other' && renderOtherTab()}
         {activeTab === 'about' && renderAboutTab()}
       </div>

@@ -54,9 +54,30 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
   const [state, setState] = useState<ScriptState>(loadScriptState);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [highlightedScriptId, setHighlightedScriptId] = useState<string | null>(null);
+  const [displayFontSize, setDisplayFontSize] = useState(28);
 
   const { slots, currentScripts } = useAmmoStore();
   const activeTheme = useThemeStore().getActiveTheme();
+
+  // Sync font size with display settings
+  useEffect(() => {
+    const handleDisplayChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ scriptFontSize: number }>;
+      setDisplayFontSize(customEvent.detail?.scriptFontSize || 28);
+    };
+    const loadDisplaySettings = () => {
+      try {
+        const saved = localStorage.getItem('wordshot-display-settings');
+        if (saved) {
+          const settings = JSON.parse(saved);
+          setDisplayFontSize(settings.scriptFontSize || 28);
+        }
+      } catch {}
+    };
+    loadDisplaySettings();
+    window.addEventListener('display-settings-changed', handleDisplayChange);
+    return () => window.removeEventListener('display-settings-changed', handleDisplayChange);
+  }, []);
 
   // Get all scripts
   const scripts: Script[] = (externalScripts && externalScripts.length > 0)
@@ -67,7 +88,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
   const backgroundColor = activeTheme?.background || 'var(--script-bg, #1a1a2e)';
   const textColor = activeTheme?.textColor || 'var(--script-text, #ffffff)';
   const accentColor = activeTheme?.accentColor || 'var(--script-accent, #e94560)';
-  const fontSize = activeTheme?.fontSize || 28;
+  const fontSize = displayFontSize;
 
   // Keep speedRef in sync with state
   speedRef.current = state.scrollSpeed;

@@ -31,6 +31,7 @@ function ScrollingCard({
   onTogglePlay,
   onResizeStart,
   cardWidth,
+  fontSize,
 }: {
   slot: AmmoSlotConfig;
   scripts: Script[];
@@ -40,13 +41,13 @@ function ScrollingCard({
   onTogglePlay: () => void;
   onResizeStart: (e: React.MouseEvent, slotId: string) => void;
   cardWidth?: number;
+  fontSize?: number;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const scrollYRef = useRef<number>(0);
   const speedRef = useRef<number>(1);
-  const fontSize = 13;
   const lineHeight = fontSize * 1.5;
 
   // Sync speed with ScriptView
@@ -136,6 +137,7 @@ function ScrollingCard({
       style={{
         '--card-color': cardColor,
         '--card-text-color': getContrastTextColor(cardColor),
+        '--card-font-size': `${fontSize}px`,
         width: cardWidth ? `${cardWidth}px` : undefined,
       } as React.CSSProperties}
       onClick={(e) => {
@@ -188,10 +190,31 @@ export function AmmoZone({ className = '' }: AmmoZoneProps) {
   const [selectedSlot, setSelectedSlot] = useState<string>('slot-1');
   const [playingSlots, setPlayingSlots] = useState<Set<string>>(new Set());
   const [flashingSlots, setFlashingSlots] = useState<Set<string>>(new Set());
+  const [ammoFontSize, setAmmoFontSize] = useState(13);
   const autoRotateTimersRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   const lastUsedRef = useRef<Map<string, number>>(new Map());
   const dragRef = useRef<{ slotId: string; startX: number; startWidth: number } | null>(null);
   const isDraggingRef = useRef(false);
+
+  // Sync font size with display settings
+  useEffect(() => {
+    const handleDisplayChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ ammoFontSize: number }>;
+      setAmmoFontSize(customEvent.detail?.ammoFontSize || 13);
+    };
+    const loadDisplaySettings = () => {
+      try {
+        const saved = localStorage.getItem('wordshot-display-settings');
+        if (saved) {
+          const settings = JSON.parse(saved);
+          setAmmoFontSize(settings.ammoFontSize || 13);
+        }
+      } catch {}
+    };
+    loadDisplaySettings();
+    window.addEventListener('display-settings-changed', handleDisplayChange);
+    return () => window.removeEventListener('display-settings-changed', handleDisplayChange);
+  }, []);
 
   const theme = getActiveTheme();
 
@@ -401,6 +424,7 @@ export function AmmoZone({ className = '' }: AmmoZoneProps) {
               onTogglePlay={() => toggleSlotPlay(slot.slotId)}
               onResizeStart={handleResizeStart}
               cardWidth={cardWidth}
+              fontSize={ammoFontSize}
             />
           );
         })}
