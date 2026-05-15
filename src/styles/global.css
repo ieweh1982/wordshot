@@ -20,7 +20,7 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: var(--bg-primary);
+  background: transparent;
   color: var(--text-primary);
   overflow: hidden;
 }
@@ -28,4 +28,5 @@ body {
 #root {
   width: 100vw;
   height: 100vh;
+  background: transparent;
 }

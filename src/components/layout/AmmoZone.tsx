@@ -48,7 +48,7 @@ function ScrollingCard({
   const lastTimeRef = useRef<number>(0);
   const scrollYRef = useRef<number>(0);
   const speedRef = useRef<number>(1);
-  const lineHeight = fontSize * 1.5;
+  const lineHeight = (fontSize ?? 13) * 1.5;
 
   // Sync speed with ScriptView
   useEffect(() => {
@@ -191,6 +191,7 @@ export function AmmoZone({ className = '' }: AmmoZoneProps) {
   const [playingSlots, setPlayingSlots] = useState<Set<string>>(new Set());
   const [flashingSlots, setFlashingSlots] = useState<Set<string>>(new Set());
   const [ammoFontSize, setAmmoFontSize] = useState(13);
+  const [opacity, setOpacity] = useState(1);
   const autoRotateTimersRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   const lastUsedRef = useRef<Map<string, number>>(new Map());
   const dragRef = useRef<{ slotId: string; startX: number; startWidth: number } | null>(null);
@@ -214,6 +215,23 @@ export function AmmoZone({ className = '' }: AmmoZoneProps) {
     loadDisplaySettings();
     window.addEventListener('display-settings-changed', handleDisplayChange);
     return () => window.removeEventListener('display-settings-changed', handleDisplayChange);
+  }, []);
+
+  // Sync opacity with transparency settings
+  useEffect(() => {
+    const handleTransparencyChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ type: string; value: number }>;
+      if (customEvent.detail?.type === 'ammo') {
+        setOpacity(customEvent.detail.value);
+      }
+    };
+    const loadOpacity = () => {
+      const saved = localStorage.getItem('wordshot-ammo-opacity');
+      if (saved) setOpacity(parseFloat(saved));
+    };
+    loadOpacity();
+    window.addEventListener('transparency-changed', handleTransparencyChange);
+    return () => window.removeEventListener('transparency-changed', handleTransparencyChange);
   }, []);
 
   const theme = getActiveTheme();
@@ -403,7 +421,7 @@ export function AmmoZone({ className = '' }: AmmoZoneProps) {
   };
 
   return (
-    <div className={`ammo-zone ${className}`}>
+    <div className={`ammo-zone ${className}`} style={{ opacity }}>
       <div className="ammo-zone__cards">
         {slots.filter(slot => slot.enabled).map((slot) => {
           const slotScripts = getSlotScripts(slot.sourceCategory);

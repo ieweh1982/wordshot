@@ -184,6 +184,7 @@ export const Settings: React.FC<Props> = ({ className }) => {
   // Save transparency
   const saveTransparency = useCallback((type: 'script' | 'ammo' | 'danmu', value: number) => {
     localStorage.setItem(`wordshot-${type}-opacity`, String(value));
+    window.dispatchEvent(new CustomEvent('transparency-changed', { detail: { type, value } }));
   }, []);
 
   // Save display settings

@@ -55,6 +55,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
   const [scrollOffset, setScrollOffset] = useState(0);
   const [highlightedScriptId, setHighlightedScriptId] = useState<string | null>(null);
   const [displayFontSize, setDisplayFontSize] = useState(28);
+  const [opacity, setOpacity] = useState(1);
 
   const { slots, currentScripts } = useAmmoStore();
   const activeTheme = useThemeStore().getActiveTheme();
@@ -77,6 +78,23 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
     loadDisplaySettings();
     window.addEventListener('display-settings-changed', handleDisplayChange);
     return () => window.removeEventListener('display-settings-changed', handleDisplayChange);
+  }, []);
+
+  // Sync opacity with transparency settings
+  useEffect(() => {
+    const handleTransparencyChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ type: string; value: number }>;
+      if (customEvent.detail?.type === 'script') {
+        setOpacity(customEvent.detail.value);
+      }
+    };
+    const loadOpacity = () => {
+      const saved = localStorage.getItem('wordshot-script-opacity');
+      if (saved) setOpacity(parseFloat(saved));
+    };
+    loadOpacity();
+    window.addEventListener('transparency-changed', handleTransparencyChange);
+    return () => window.removeEventListener('transparency-changed', handleTransparencyChange);
   }, []);
 
   // Get all scripts
@@ -246,9 +264,10 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
   }, []);
 
   const containerStyle: React.CSSProperties = {
-    backgroundColor,
+    backgroundColor: 'transparent',
     color: textColor,
     '--script-accent': accentColor,
+    opacity,
   } as React.CSSProperties;
 
   return (
@@ -256,6 +275,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
       ref={containerRef}
       className={`script-view ${className}`}
       style={containerStyle}
+      data-opacity={opacity}
       tabIndex={0}
       onClick={() => {
         setState(prev => {
@@ -287,6 +307,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
                       <div
                         key={lineIdx}
                         className={`script-line ${script.id === highlightedScriptId ? 'current-script' : ''}`}
+                        style={{ background: 'transparent' }}
                       >
                         {line || ' '}
                       </div>

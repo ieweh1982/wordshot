@@ -15,12 +15,17 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    transparent: true,
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false
     }
   })
+
+  // Set background color to transparent
+  mainWindow.setBackgroundColor('#00000000')
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173')

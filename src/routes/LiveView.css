@@ -4,14 +4,14 @@
   --theme-bg: #1a1a2e;
   --theme-text: #ffffff;
   --theme-accent: #e94560;
-  --panel-bg: #1e1e2e;
+  --panel-bg: rgba(30, 30, 46, 0.85);
   --panel-text: #ffffff;
 
   display: flex;
   flex-direction: column;
   width: 100vw;
   height: 100vh;
-  background-color: var(--theme-bg);
+  background: transparent;
   color: var(--theme-text);
   overflow: hidden;
   position: relative;
@@ -149,7 +149,7 @@
 
 /* Panel Container */
 .panel-container {
-  background: var(--panel-bg, #1e1e2e);
+  background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   display: flex;
@@ -162,6 +162,7 @@
   flex: 1;
   overflow: hidden;
   padding: 4px;
+  background: transparent;
 }
 
 .panel-container:hover {
@@ -173,7 +174,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 4px 8px;
-  background: rgba(0, 0, 0, 0.25);
+  background: transparent;
   cursor: move;
   user-select: none;
   -webkit-app-region: drag;
@@ -193,16 +194,10 @@
 }
 
 /* Panel specific styles */
-.panel-script {
-  --panel-bg: #1a1a2e;
-}
-
-.panel-danmu {
-  --panel-bg: #1e1e2e;
-}
-
+.panel-script,
+.panel-danmu,
 .panel-ammo {
-  --panel-bg: #1e1e2e;
+  background: transparent;
 }
 
 /* react-grid-layout placeholder */

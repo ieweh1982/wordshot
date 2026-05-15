@@ -609,7 +609,7 @@ export default function LiveView() {
       root.style.setProperty('--theme-text', activeTheme.textColor);
       root.style.setProperty('--theme-accent', activeTheme.accentColor);
       root.style.setProperty('--theme-highlight', activeTheme.highlightColor);
-      root.style.setProperty('--panel-bg', activeTheme.background);
+      root.style.setProperty('--panel-bg', 'transparent');
       root.style.setProperty('--panel-text', activeTheme.textColor);
     }
   }, [activeTheme]);
@@ -636,7 +636,7 @@ export default function LiveView() {
       ref={containerRef}
       className="live-view"
       style={{
-        '--theme-bg': activeTheme?.background || '#1a1a2e',
+        '--theme-bg': 'transparent',
         '--theme-text': activeTheme?.textColor || '#ffffff',
         '--theme-accent': activeTheme?.accentColor || '#e94560',
       } as React.CSSProperties}

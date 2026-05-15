@@ -42,7 +42,25 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
 
   const [recommendations, setRecommendations] = useState<AIRecommendationResult | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [opacity, setOpacity] = useState(1);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Sync opacity with transparency settings
+  useEffect(() => {
+    const handleTransparencyChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ type: string; value: number }>;
+      if (customEvent.detail?.type === 'danmu') {
+        setOpacity(customEvent.detail.value);
+      }
+    };
+    const loadOpacity = () => {
+      const saved = localStorage.getItem('wordshot-danmu-opacity');
+      if (saved) setOpacity(parseFloat(saved));
+    };
+    loadOpacity();
+    window.addEventListener('transparency-changed', handleTransparencyChange);
+    return () => window.removeEventListener('transparency-changed', handleTransparencyChange);
+  }, []);
 
   // Auto-scroll to bottom when new danmu arrives
   useEffect(() => {
@@ -209,8 +227,9 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
-          backgroundColor: 'var(--theme-background, #1a1a2e)',
+          backgroundColor: 'transparent',
           overflow: 'hidden',
+          opacity,
         } as React.CSSProperties
       }
     >
