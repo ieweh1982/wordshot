@@ -1,0 +1,206 @@
+.slot-card-panel {
+  --card-color: #4a9eff;
+  --card-text-color: #ffffff;
+  --card-font-size: 13px;
+  --card-bg: rgba(37, 37, 66, 0.85);
+  --card-border: rgba(58, 58, 92, 0.6);
+
+  position: absolute;
+  min-width: 120px;
+  max-width: 400px;
+  min-height: 80px;
+  max-height: 400px;
+  background: var(--card-bg);
+  border: 1.5px solid var(--card-color, #666);
+  border-radius: 6px;
+  padding: 6px;
+  cursor: move;
+  user-select: none;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.slot-card-panel:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.slot-card-panel.selected {
+  border-color: var(--ammo-accent, #4a9eff);
+  box-shadow: 0 0 0 1.5px var(--ammo-accent, #4a9eff);
+}
+
+.slot-card-panel.playing {
+  border-color: var(--ammo-highlight, #4CAF50);
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.4);
+}
+
+.slot-card-panel__resize-handle {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  bottom: 4px;
+  width: 12px;
+  cursor: col-resize;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.slot-card-panel__resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 24px;
+  background: var(--card-color);
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.slot-card-panel:hover .slot-card-panel__resize-handle::after {
+  opacity: 0.6;
+}
+
+.slot-card-panel__resize-handle:hover::after {
+  opacity: 1 !important;
+}
+
+.slot-card-panel__height-handle {
+  position: absolute;
+  left: 4px;
+  bottom: 0;
+  right: 4px;
+  height: 10px;
+  cursor: row-resize;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.slot-card-panel__height-handle::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 4px;
+  background: var(--card-color);
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.slot-card-panel:hover .slot-card-panel__height-handle::after {
+  opacity: 0.6;
+}
+
+.slot-card-panel__height-handle:hover::after {
+  opacity: 1 !important;
+}
+
+.slot-card-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.slot-card-panel__hotkey {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: var(--card-color);
+  color: var(--card-text-color);
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.slot-card-panel__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--card-color);
+}
+
+.slot-card-panel__auto-badge {
+  margin-left: auto;
+  font-size: 9px;
+  padding: 1px 3px;
+  background: var(--ammo-accent, #4a9eff);
+  color: white;
+  border-radius: 2px;
+}
+
+.slot-card-panel__content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.slot-card-panel__scroll-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+}
+
+.slot-card-panel__script-block {
+  padding: 2px 0;
+  opacity: 0.5;
+  transition: opacity 0.3s ease, color 0.3s ease;
+}
+
+.slot-card-panel__script-block.highlighted {
+  opacity: 1;
+}
+
+.slot-card-panel__script-block.highlighted .slot-card-panel__script {
+  color: #4CAF50;
+}
+
+.slot-card-panel__script {
+  font-size: var(--card-font-size, 13px);
+  line-height: 1.4;
+  color: var(--card-text-color);
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.slot-card-panel__divider {
+  text-align: center;
+  color: var(--card-color);
+  opacity: 0.3;
+  font-size: 10px;
+  padding: 2px 0;
+}
+
+.slot-card-panel__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9px;
+  color: var(--card-text-color);
+  opacity: 0.7;
+}
+
+.slot-card-panel__counter {
+  font-variant-numeric: tabular-nums;
+}
+
+.slot-card-panel__status {
+  color: var(--ammo-accent, #4a9eff);
+}
+
+.slot-card-panel__status.playing {
+  color: #4CAF50;
+}

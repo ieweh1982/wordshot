@@ -2,8 +2,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import GridLayout from 'react-grid-layout';
 import { ScriptView } from '../components/layout/ScriptView';
-import { AmmoZone } from '../components/layout/AmmoZone';
 import DanmuPanel from '../components/layout/DanmuPanel';
+import { SlotCardPanel } from '../components/layout/SlotCardPanel';
 import { useLayoutStore, LayoutItem } from '../stores/layoutStore';
 import { useThemeStore } from '../stores/themeStore';
 import { useAmmoStore } from '../stores/ammoStore';
@@ -622,8 +622,6 @@ export default function LiveView() {
         return <ScriptView scripts={templateScripts.length > 0 ? templateScripts : undefined} />;
       case 'danmu':
         return <DanmuPanel />;
-      case 'ammo':
-        return <AmmoZone />;
       default:
         return null;
     }
@@ -652,27 +650,33 @@ export default function LiveView() {
 
       <div className="live-view__content">
         {dimensions.width > 0 && dimensions.height > 0 && (
-          <LiveViewGrid
-            width={dimensions.width}
-            height={dimensions.height}
-            onLayoutChange={() => {}}
-          >
-            {layout.map((item) => (
-              <div key={item.i} className={`panel-container panel-${item.i}`}>
-                <div className="panel-drag-handle">
-                  <span className="panel-title">
-                    {item.i === 'script' && '主提词区'}
-                    {item.i === 'danmu' && '公屏互动'}
-                    {item.i === 'ammo' && '话术弹药带'}
-                  </span>
-                  <span className="panel-resize-hint">⋮⋮</span>
+          <>
+            {/* Main panels grid (script and danmu) */}
+            <LiveViewGrid
+              width={dimensions.width}
+              height={dimensions.height}
+              onLayoutChange={() => {}}
+            >
+              {layout.filter(item => item.i !== 'ammo').map((item) => (
+                <div key={item.i} className={`panel-container panel-${item.i}`}>
+                  <div className="panel-drag-handle">
+                    <span className="panel-title">
+                      {item.i === 'script' && '主提词区'}
+                      {item.i === 'danmu' && '公屏互动'}
+                    </span>
+                    <span className="panel-resize-hint">⋮⋮</span>
+                  </div>
+                  <div className="panel-content">
+                    {renderPanelContent(item.i)}
+                  </div>
                 </div>
-                <div className="panel-content">
-                  {renderPanelContent(item.i)}
-                </div>
-              </div>
+              ))}
+            </LiveViewGrid>
+            {/* Floating slot card panels */}
+            {slots.filter(slot => slot.enabled).map((slot) => (
+              <SlotCardPanel key={slot.slotId} slot={slot} />
             ))}
-          </LiveViewGrid>
+          </>
         )}
       </div>
 

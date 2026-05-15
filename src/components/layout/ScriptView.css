@@ -63,7 +63,6 @@
   white-space: pre-wrap;
   max-width: 90%;
   overflow-wrap: break-word;
-  text-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
   display: flex;
   flex-direction: column;
   will-change: transform;
@@ -88,8 +87,7 @@
 
 /* 单行文字 */
 .script-line {
-  opacity: 0.4;
-  transition: opacity 0.5s ease, transform 0.5s ease, color 0.3s ease;
+  transition: color 0.3s ease;
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   color: inherit;
@@ -99,8 +97,6 @@
 .script-line.current-script {
   opacity: 1;
   color: var(--highlight-color);
-  text-shadow: 0 0 20px rgba(76, 175, 80, 0.8);
-  transform: scale(1.05);
 }
 
 /* 已滚动过的行 - 渐隐效果 */

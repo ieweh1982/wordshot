@@ -30,7 +30,9 @@ function ScrollingCard({
   isPlaying,
   onTogglePlay,
   onResizeStart,
+  onPositionDragStart,
   cardWidth,
+  cardPosition,
   fontSize,
 }: {
   slot: AmmoSlotConfig;
@@ -40,7 +42,9 @@ function ScrollingCard({
   isPlaying: boolean;
   onTogglePlay: () => void;
   onResizeStart: (e: React.MouseEvent, slotId: string) => void;
+  onPositionDragStart: (e: React.MouseEvent, slotId: string) => void;
   cardWidth?: number;
+  cardPosition?: { x: number; y: number };
   fontSize?: number;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -139,7 +143,15 @@ function ScrollingCard({
         '--card-text-color': getContrastTextColor(cardColor),
         '--card-font-size': `${fontSize}px`,
         width: cardWidth ? `${cardWidth}px` : undefined,
+        position: 'absolute',
+        left: cardPosition?.x ?? 0,
+        top: cardPosition?.y ?? 0,
       } as React.CSSProperties}
+      onMouseDown={(e) => {
+        // Don't start position drag if clicking on resize handle
+        if ((e.target as HTMLElement).closest('.ammo-card__resize-handle')) return;
+        onPositionDragStart(e, slot.slotId);
+      }}
       onClick={(e) => {
         e.stopPropagation();
         onTogglePlay();
@@ -184,7 +196,7 @@ function ScrollingCard({
 }
 
 export function AmmoZone({ className = '' }: AmmoZoneProps) {
-  const { slots, cardWidths, currentScripts, setCurrentScript, switchScript, setCardWidth } = useAmmoStore();
+  const { slots, cardWidths, cardPositions, currentScripts, setCurrentScript, switchScript, setCardWidth, setCardPosition } = useAmmoStore();
   const scripts = useScriptStore(state => state.scripts);
   const { getActiveTheme } = useThemeStore();
   const [selectedSlot, setSelectedSlot] = useState<string>('slot-1');
@@ -195,6 +207,7 @@ export function AmmoZone({ className = '' }: AmmoZoneProps) {
   const autoRotateTimersRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   const lastUsedRef = useRef<Map<string, number>>(new Map());
   const dragRef = useRef<{ slotId: string; startX: number; startWidth: number } | null>(null);
+  const positionDragRef = useRef<{ slotId: string; startMouseX: number; startMouseY: number; startPosX: number; startPosY: number } | null>(null);
   const isDraggingRef = useRef(false);
 
   // Sync font size with display settings
@@ -382,6 +395,24 @@ export function AmmoZone({ className = '' }: AmmoZoneProps) {
     }, 500);
   }, []);
 
+  // Position drag handlers for slot cards
+  const handlePositionDragStart = useCallback((e: React.MouseEvent, slotId: string) => {
+    if (e.button !== 0) return; // Only left mouse button
+    e.stopPropagation();
+    e.preventDefault();
+    const currentPos = cardPositions[slotId] || { x: 0, y: 0 };
+    positionDragRef.current = {
+      slotId,
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startPosX: currentPos.x,
+      startPosY: currentPos.y
+    };
+    isDraggingRef.current = true;
+    document.body.style.cursor = 'move';
+    document.body.style.userSelect = 'none';
+  }, [cardPositions]);
+
   // Resize handlers for slot cards
   const handleResizeStart = useCallback((e: React.MouseEvent, slotId: string) => {
     e.stopPropagation();
@@ -395,14 +426,25 @@ export function AmmoZone({ className = '' }: AmmoZoneProps) {
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!dragRef.current) return;
-      const delta = e.clientX - dragRef.current.startX;
-      const newWidth = Math.max(300, Math.min(650, dragRef.current.startWidth + delta));
-      setCardWidth(dragRef.current.slotId, newWidth);
+      // Handle position drag
+      if (positionDragRef.current) {
+        const deltaX = e.clientX - positionDragRef.current.startMouseX;
+        const deltaY = e.clientY - positionDragRef.current.startMouseY;
+        const newX = positionDragRef.current.startPosX + deltaX;
+        const newY = positionDragRef.current.startPosY + deltaY;
+        setCardPosition(positionDragRef.current.slotId, { x: newX, y: newY });
+      }
+      // Handle resize drag
+      if (dragRef.current) {
+        const delta = e.clientX - dragRef.current.startX;
+        const newWidth = Math.max(300, Math.min(650, dragRef.current.startWidth + delta));
+        setCardWidth(dragRef.current.slotId, newWidth);
+      }
     };
 
     const handleMouseUp = () => {
       dragRef.current = null;
+      positionDragRef.current = null;
       isDraggingRef.current = false;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
@@ -414,7 +456,7 @@ export function AmmoZone({ className = '' }: AmmoZoneProps) {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, []);
+  }, [setCardWidth, setCardPosition]);
 
   const getCardColor = (category: ScriptCategory): string => {
     return theme?.cardColors[category] || '#666666';
@@ -441,7 +483,9 @@ export function AmmoZone({ className = '' }: AmmoZoneProps) {
               isPlaying={isPlaying}
               onTogglePlay={() => toggleSlotPlay(slot.slotId)}
               onResizeStart={handleResizeStart}
+              onPositionDragStart={handlePositionDragStart}
               cardWidth={cardWidth}
+              cardPosition={cardPositions[slot.slotId]}
               fontSize={ammoFontSize}
             />
           );

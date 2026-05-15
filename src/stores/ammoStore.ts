@@ -4,6 +4,8 @@ import type { Script, AmmoSlotConfig, ScriptCategory } from '../types';
 interface AmmoState {
   slots: AmmoSlotConfig[];
   cardWidths: Record<string, number>;
+  cardHeights: Record<string, number>;
+  cardPositions: Record<string, { x: number; y: number }>;
   currentScripts: Record<string, Script>;
   previewIndex: Record<string, number>;
   playingSlotId: string | null; // Which slot is currently playing (synced with ScriptView)
@@ -14,6 +16,8 @@ interface AmmoActions {
   setSlots: (slots: AmmoSlotConfig[]) => void;
   updateSlot: (slotId: string, updates: Partial<AmmoSlotConfig>) => void;
   setCardWidth: (slotId: string, width: number) => void;
+  setCardHeight: (slotId: string, height: number) => void;
+  setCardPosition: (slotId: string, position: { x: number; y: number }) => void;
 
   // Script operations
   setCurrentScript: (slotId: string, script: Script) => void;
@@ -41,6 +45,8 @@ type AmmoStore = AmmoState & AmmoActions;
 
 const STORAGE_KEY = 'wordshot_slot_config';
 const CARD_WIDTHS_KEY = 'wordshot_card_widths';
+const CARD_HEIGHTS_KEY = 'wordshot_card_heights';
+const CARD_POSITIONS_KEY = 'wordshot_card_positions';
 
 const DEFAULT_SLOTS: AmmoSlotConfig[] = [
   { slotId: 'slot-1', hotkey: '1', displayName: '感谢', sourceCategory: 'thanks', displayCount: 3, enabled: true, autoRotateEnabled: false, autoRotateIntervalMs: 5000 },
@@ -86,9 +92,64 @@ function saveCardWidthsToStorage(widths: Record<string, number>): void {
   }
 }
 
+function loadCardPositionsFromStorage(): Record<string, { x: number; y: number }> {
+  try {
+    const saved = localStorage.getItem(CARD_POSITIONS_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (error) {
+    console.error('Error loading card positions:', error);
+  }
+  return DEFAULT_CARD_POSITIONS;
+}
+
+function saveCardPositionsToStorage(positions: Record<string, { x: number; y: number }>): void {
+  try {
+    localStorage.setItem(CARD_POSITIONS_KEY, JSON.stringify(positions));
+  } catch (error) {
+    console.error('Error saving card positions:', error);
+  }
+}
+
+// Default positions for 9 slots in a grid at the bottom (y=400 for first row, y=520 for second row)
+const DEFAULT_CARD_POSITIONS: Record<string, { x: number; y: number }> = {
+  'slot-1': { x: 0, y: 400 },
+  'slot-2': { x: 190, y: 400 },
+  'slot-3': { x: 380, y: 400 },
+  'slot-4': { x: 570, y: 400 },
+  'slot-5': { x: 760, y: 400 },
+  'slot-6': { x: 0, y: 520 },
+  'slot-7': { x: 190, y: 520 },
+  'slot-8': { x: 380, y: 520 },
+  'slot-9': { x: 570, y: 520 },
+};
+
+function loadCardHeightsFromStorage(): Record<string, number> {
+  try {
+    const saved = localStorage.getItem(CARD_HEIGHTS_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (error) {
+    console.error('Error loading card heights:', error);
+  }
+  return {};
+}
+
+function saveCardHeightsToStorage(heights: Record<string, number>): void {
+  try {
+    localStorage.setItem(CARD_HEIGHTS_KEY, JSON.stringify(heights));
+  } catch (error) {
+    console.error('Error saving card heights:', error);
+  }
+}
+
 const initialState: AmmoState = {
   slots: loadSlotsFromStorage(),
   cardWidths: loadCardWidthsFromStorage(),
+  cardHeights: loadCardHeightsFromStorage(),
+  cardPositions: loadCardPositionsFromStorage(),
   currentScripts: {},
   previewIndex: {},
   playingSlotId: null,
@@ -122,6 +183,18 @@ export const ammoStore = create<AmmoStore>((set, get) => ({
     const newWidths = { ...get().cardWidths, [slotId]: width };
     saveCardWidthsToStorage(newWidths);
     set({ cardWidths: newWidths });
+  },
+
+  setCardHeight: (slotId: string, height: number) => {
+    const newHeights = { ...get().cardHeights, [slotId]: height };
+    saveCardHeightsToStorage(newHeights);
+    set({ cardHeights: newHeights });
+  },
+
+  setCardPosition: (slotId: string, position: { x: number; y: number }) => {
+    const newPositions = { ...get().cardPositions, [slotId]: position };
+    saveCardPositionsToStorage(newPositions);
+    set({ cardPositions: newPositions });
   },
 
   // Script operations
