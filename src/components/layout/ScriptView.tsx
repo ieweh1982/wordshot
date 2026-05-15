@@ -245,9 +245,10 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
       e.preventDefault();
       const delta = e.deltaY > 0 ? 0.1 : -0.1;
       setState(prev => {
-        const newSpeed = Math.max(0.5, Math.min(5, prev.scrollSpeed + delta));
+        const newSpeed = Math.max(0.1, Math.min(5, prev.scrollSpeed + delta));
         const newState = { ...prev, scrollSpeed: Math.round(newSpeed * 10) / 10 };
         saveScriptState(newState);
+        window.dispatchEvent(new CustomEvent('script-view-speed', { detail: { scrollSpeed: newState.scrollSpeed } }));
         return newState;
       });
     };

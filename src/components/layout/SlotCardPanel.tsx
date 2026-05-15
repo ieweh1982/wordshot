@@ -28,6 +28,7 @@ export function SlotCardPanel({ slot, className = '' }: SlotCardPanelProps) {
   const [playingSlots, setPlayingSlots] = useState<Set<string>>(new Set());
   const [flashingSlots, setFlashingSlots] = useState<Set<string>>(new Set());
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [ammoFontSize, setAmmoFontSize] = useState(13);
   const contentRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
@@ -44,6 +45,26 @@ export function SlotCardPanel({ slot, className = '' }: SlotCardPanelProps) {
   const cardPosition = cardPositions[slot.slotId] || { x: 0, y: 0 };
   const isSelected = selectedSlot === slot.slotId;
   const isPlaying = playingSlots.has(slot.slotId);
+
+  // Sync font size with display settings
+  useEffect(() => {
+    const handleDisplayChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ ammoFontSize: number }>;
+      setAmmoFontSize(customEvent.detail?.ammoFontSize || 13);
+    };
+    const loadDisplaySettings = () => {
+      try {
+        const saved = localStorage.getItem('wordshot-display-settings');
+        if (saved) {
+          const settings = JSON.parse(saved);
+          setAmmoFontSize(settings.ammoFontSize || 13);
+        }
+      } catch {}
+    };
+    loadDisplaySettings();
+    window.addEventListener('display-settings-changed', handleDisplayChange);
+    return () => window.removeEventListener('display-settings-changed', handleDisplayChange);
+  }, []);
 
   // Sync speed with ScriptView
   useEffect(() => {
@@ -197,13 +218,15 @@ export function SlotCardPanel({ slot, className = '' }: SlotCardPanelProps) {
   };
 
   const cardColor = '#4a9eff';
+  const cardTextColor = '#ffffff';
 
   return (
     <div
       className={`slot-card-panel ${className}`}
       style={{
         '--card-color': cardColor,
-        '--card-text-color': getContrastTextColor(cardColor),
+        '--card-text-color': cardTextColor,
+        '--card-font-size': `${ammoFontSize}px`,
         width: `${cardWidth}px`,
         height: `${cardHeight}px`,
         position: 'absolute',
