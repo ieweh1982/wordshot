@@ -273,13 +273,15 @@ function ShortcutHelpModal({ isOpen, onClose }: ShortcutHelpModalProps) {
 interface TopBarProps {
   status: LiveStatus;
   isLive: boolean;
+  topBarCollapsed: boolean;
+  onToggleCollapse: () => void;
   onSwitchToMaintenance: () => void;
   onShowShortcuts: () => void;
   onShowStartModal: () => void;
   onEndLive?: () => void;
 }
 
-function TopBar({ status, isLive, onSwitchToMaintenance, onShowShortcuts, onShowStartModal, onEndLive }: TopBarProps) {
+function TopBar({ status, isLive, topBarCollapsed, onToggleCollapse, onSwitchToMaintenance, onShowShortcuts, onShowStartModal, onEndLive }: TopBarProps) {
   const formatDuration = (seconds: number): string => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -295,52 +297,66 @@ function TopBar({ status, isLive, onSwitchToMaintenance, onShowShortcuts, onShow
   };
 
   return (
-    <div className="top-bar">
+    <div className={`top-bar ${topBarCollapsed ? 'collapsed' : ''}`}>
       <div className="top-bar__left">
         <button
-          className={`mode-btn mode-btn--live ${isLive ? 'active' : ''}`}
-          onClick={isLive ? onEndLive : onShowStartModal}
+          className="top-bar__collapse-btn"
+          onClick={onToggleCollapse}
+          title={topBarCollapsed ? '展开' : '折叠'}
         >
-          {isLive ? '结束直播' : '直播模式'}
+          {topBarCollapsed ? '▼' : '▲'}
         </button>
-        <button
-          className="mode-btn mode-btn--maintenance"
-          onClick={onSwitchToMaintenance}
-        >
-          维护模式
-        </button>
-      </div>
-
-      <div className="top-bar__status">
-        {isLive && (
+        {!topBarCollapsed && (
           <>
-            <div className="status-item">
-              <span className="status-label">直播时长</span>
-              <span className="status-value status-value--highlight">{formatDuration(status.duration)}</span>
-            </div>
-            <div className="status-divider" />
-            <div className="status-item">
-              <span className="status-label">当前环节</span>
-              <span className="status-value">{status.currentSegment || '--'}</span>
-            </div>
-            <div className="status-divider" />
-            <div className="status-item">
-              <span className="status-label">PK倒计时</span>
-              <span className="status-value status-value--warning">{formatCountdown(status.pkCountdown)}</span>
-            </div>
-            <div className="status-divider" />
-            <div className="status-item">
-              <span className="status-label">新增关注</span>
-              <span className="status-value status-value--success">+{status.newFollowers}</span>
-            </div>
-            <div className="status-divider" />
-            <div className="status-item">
-              <span className="status-label">礼物提醒</span>
-              <span className="status-value status-value--gift">{status.giftAlerts > 0 ? `🎁 ${status.giftAlerts}` : '0'}</span>
-            </div>
+            <button
+              className={`mode-btn mode-btn--live ${isLive ? 'active' : ''}`}
+              onClick={isLive ? onEndLive : onShowStartModal}
+            >
+              {isLive ? '结束直播' : '直播模式'}
+            </button>
+            <button
+              className="mode-btn mode-btn--maintenance"
+              onClick={onSwitchToMaintenance}
+            >
+              维护模式
+            </button>
           </>
         )}
       </div>
+
+      {/* Status section - hidden when collapsed */}
+      {!topBarCollapsed && (
+        <div className="top-bar__status">
+          {isLive && (
+            <>
+              <div className="status-item">
+                <span className="status-label">直播时长</span>
+                <span className="status-value status-value--highlight">{formatDuration(status.duration)}</span>
+              </div>
+              <div className="status-divider" />
+              <div className="status-item">
+                <span className="status-label">当前环节</span>
+                <span className="status-value">{status.currentSegment || '--'}</span>
+              </div>
+              <div className="status-divider" />
+              <div className="status-item">
+                <span className="status-label">PK倒计时</span>
+                <span className="status-value status-value--warning">{formatCountdown(status.pkCountdown)}</span>
+              </div>
+              <div className="status-divider" />
+              <div className="status-item">
+                <span className="status-label">新增关注</span>
+                <span className="status-value status-value--success">+{status.newFollowers}</span>
+              </div>
+              <div className="status-divider" />
+              <div className="status-item">
+                <span className="status-label">礼物提醒</span>
+                <span className="status-value status-value--gift">{status.giftAlerts > 0 ? `🎁 ${status.giftAlerts}` : '0'}</span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="top-bar__right">
         <button className="icon-btn" onClick={onShowShortcuts} title="快捷键帮助">
@@ -416,6 +432,7 @@ export default function LiveView() {
   const [isLive, setIsLive] = useState(false);
   const [showStartModal, setShowStartModal] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [topBarCollapsed, setTopBarCollapsed] = useState(false);
   const [currentSession, setCurrentSession] = useState<string | null>(null);
   const [currentMainScript, setCurrentMainScript] = useState<MainScript | null>(null);
   const [templateScripts, setTemplateScripts] = useState<Script[]>([]); // Scripts from selected template
@@ -642,6 +659,8 @@ export default function LiveView() {
       <TopBar
         status={status}
         isLive={isLive}
+        topBarCollapsed={topBarCollapsed}
+        onToggleCollapse={() => setTopBarCollapsed(!topBarCollapsed)}
         onSwitchToMaintenance={handleSwitchToMaintenance}
         onShowShortcuts={() => setShowShortcuts(true)}
         onShowStartModal={() => setShowStartModal(true)}
