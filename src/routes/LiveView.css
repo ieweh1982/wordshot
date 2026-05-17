@@ -458,6 +458,60 @@ kbd {
   font-family: inherit;
 }
 
+/* Floating Panel Styles */
+.floating-panel {
+  position: absolute;
+  background: var(--panel-bg, rgba(30, 30, 46, 0.85));
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.floating-panel:hover {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+
+.floating-panel--script {
+  z-index: 10;
+}
+
+.floating-panel--danmu {
+  z-index: 10;
+}
+
+.floating-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: move;
+  user-select: none;
+}
+
+.floating-panel__title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--panel-text, #e0e0e0);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.floating-panel__resize-hint {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: se-resize;
+  padding: 2px 4px;
+}
+
+.floating-panel__resize-hint:hover {
+  color: rgba(255, 255, 255, 0.7);
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .template-grid {

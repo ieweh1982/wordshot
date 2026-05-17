@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { danmuStore } from '../../stores/danmuStore';
 import { scriptStore } from '../../stores/scriptStore';
 import { themeStore } from '../../stores/themeStore';
+import { layoutStore } from '../../stores/layoutStore';
 import { getDanmuReplyService } from '../../services/DanmuReplyService';
 import { getPersonaService } from '../../services/PersonaService';
 import type { Danmu, DanmuType, Script, AIReplyItem, DanmuReplyResponse } from '../../types';
@@ -91,6 +92,11 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const processedIdsRef = useRef<Set<string>>(new Set());
   const prevDanmuLengthRef = useRef(0);
+  const positionDragRef = useRef<{ startMouseX: number; startMouseY: number; startPosX: number; startPosY: number } | null>(null);
+  const sizeDragRef = useRef<{ startMouseX: number; startMouseY: number; startWidth: number; startHeight: number } | null>(null);
+
+  const { floatingPositions, setFloatingPosition } = layoutStore();
+  const floatingPos = floatingPositions.danmu || { x: 600, y: 80, width: 300, height: 400 };
 
   // Load state from storage
   useEffect(() => {
@@ -232,6 +238,73 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
     };
   };
 
+  // Position drag handlers
+  const handlePositionDragStart = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    positionDragRef.current = {
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startPosX: floatingPos.x,
+      startPosY: floatingPos.y,
+    };
+    document.body.style.cursor = 'move';
+    document.body.style.userSelect = 'none';
+  }, [floatingPos.x, floatingPos.y]);
+
+  // Size drag handlers
+  const handleSizeDragStart = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    sizeDragRef.current = {
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startWidth: floatingPos.width,
+      startHeight: floatingPos.height,
+    };
+    document.body.style.cursor = 'se-resize';
+    document.body.style.userSelect = 'none';
+  }, [floatingPos.width, floatingPos.height]);
+
+  // Global mouse move/up handlers
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (positionDragRef.current) {
+        const deltaX = e.clientX - positionDragRef.current.startMouseX;
+        const deltaY = e.clientY - positionDragRef.current.startMouseY;
+        setFloatingPosition('danmu', {
+          ...floatingPos,
+          x: positionDragRef.current.startPosX + deltaX,
+          y: positionDragRef.current.startPosY + deltaY,
+        });
+      }
+      if (sizeDragRef.current) {
+        const deltaX = e.clientX - sizeDragRef.current.startMouseX;
+        const deltaY = e.clientY - sizeDragRef.current.startMouseY;
+        setFloatingPosition('danmu', {
+          ...floatingPos,
+          width: Math.max(150, Math.min(600, sizeDragRef.current.startWidth + deltaX)),
+          height: Math.max(200, Math.min(600, sizeDragRef.current.startHeight + deltaY)),
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      positionDragRef.current = null;
+      sizeDragRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [floatingPos, setFloatingPosition]);
+
   // Reverse to show newest at top
   const displayDanmu = filteredDanmu.length > 0 ? filteredDanmu : danmuList;
   const reversedDanmu = [...displayDanmu].reverse();
@@ -249,17 +322,38 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
 
   return (
     <div
-      className={`danmu-panel ${className}`}
+      className="floating-panel floating-panel--danmu"
       style={{
-        width: '100%',
-        height: '100%',
+        position: 'absolute',
+        left: floatingPos.x,
+        top: floatingPos.y,
+        width: floatingPos.width,
+        height: floatingPos.height,
+        cursor: 'move',
+        userSelect: 'none',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: 'transparent',
-        overflow: 'hidden',
-        opacity,
       }}
+      onMouseDown={handlePositionDragStart}
     >
+      <div className="floating-panel__header">
+        <span className="floating-panel__title">公屏互动</span>
+        <span
+          className="floating-panel__resize-hint"
+          onMouseDown={handleSizeDragStart}
+        >⋮⋮</span>
+      </div>
+      <div
+        className={`danmu-panel ${className}`}
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: 'transparent',
+          overflow: 'hidden',
+          opacity,
+        }}
+      >
       {/* Controls */}
       <div
         style={{
@@ -364,6 +458,7 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
           scrollbar-width: none;
         }
       `}</style>
+      </div>
     </div>
   );
 }

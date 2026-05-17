@@ -11,9 +11,18 @@ export interface LayoutItem {
   minH?: number;
 }
 
+export interface FloatingPosition {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface LayoutState {
   layout: LayoutItem[];
   isLoaded: boolean;
+  floatingPositions: Record<string, FloatingPosition>;
+  floatingLoaded: boolean;
 }
 
 interface LayoutActions {
@@ -22,11 +31,14 @@ interface LayoutActions {
   loadLayout: () => LayoutItem[];
   updateLayoutItem: (id: string, updates: Partial<LayoutItem>) => void;
   resetLayout: () => void;
+  setFloatingPosition: (panelId: string, position: FloatingPosition) => void;
+  loadFloatingPositions: () => void;
 }
 
 type LayoutStore = LayoutState & LayoutActions;
 
 const STORAGE_KEY = 'wordshot-layout';
+const FLOATING_STORAGE_KEY = 'wordshot-floating-positions';
 
 // Default layout: script 70% left (7 cols), danmu 30% right (3 cols), ammo bottom
 // react-grid-layout uses 12-column grid
@@ -36,9 +48,16 @@ const DEFAULT_LAYOUT: LayoutItem[] = [
   { i: 'ammo', x: 0, y: 8, w: 10, h: 2, minW: 1, minH: 1 },
 ];
 
+const DEFAULT_FLOATING_POSITIONS: Record<string, FloatingPosition> = {
+  script: { x: 50, y: 80, width: 500, height: 400 },
+  danmu: { x: 600, y: 80, width: 300, height: 400 },
+};
+
 const initialState: LayoutState = {
   layout: DEFAULT_LAYOUT,
   isLoaded: false,
+  floatingPositions: DEFAULT_FLOATING_POSITIONS,
+  floatingLoaded: false,
 };
 
 /**
@@ -107,6 +126,32 @@ const loadFromFile = async (): Promise<LayoutItem[] | null> => {
   return null;
 };
 
+/**
+ * Save floating positions to localStorage
+ */
+const saveFloatingToLocalStorage = (positions: Record<string, FloatingPosition>): void => {
+  try {
+    localStorage.setItem(FLOATING_STORAGE_KEY, JSON.stringify(positions));
+  } catch (e) {
+    console.error('Failed to save floating positions:', e);
+  }
+};
+
+/**
+ * Load floating positions from localStorage
+ */
+const loadFloatingFromLocalStorage = (): Record<string, FloatingPosition> | null => {
+  try {
+    const saved = localStorage.getItem(FLOATING_STORAGE_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('Failed to load floating positions:', e);
+  }
+  return null;
+};
+
 export const layoutStore = create<LayoutStore>((set, get) => ({
   ...initialState,
 
@@ -143,6 +188,21 @@ export const layoutStore = create<LayoutStore>((set, get) => ({
     set({ layout });
     saveToLocalStorage(layout);
     saveToFile(layout);
+  },
+
+  setFloatingPosition: (panelId, position) => {
+    const newPositions = { ...get().floatingPositions, [panelId]: position };
+    saveFloatingToLocalStorage(newPositions);
+    set({ floatingPositions: newPositions });
+  },
+
+  loadFloatingPositions: () => {
+    const saved = loadFloatingFromLocalStorage();
+    if (saved) {
+      set({ floatingPositions: saved, floatingLoaded: true });
+    } else {
+      set({ floatingPositions: DEFAULT_FLOATING_POSITIONS, floatingLoaded: true });
+    }
   },
 }));
 

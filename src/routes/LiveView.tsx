@@ -444,7 +444,7 @@ export default function LiveView() {
     giftAlerts: 0,
   });
 
-  const { loadLayout } = useLayoutStore();
+  const { loadLayout, loadFloatingPositions } = useLayoutStore();
   const activeTheme = useThemeStore((state) => state.getActiveTheme());
   const { slots } = useAmmoStore();
   const { loadScripts } = useScriptStore();
@@ -453,7 +453,8 @@ export default function LiveView() {
   useEffect(() => {
     loadScripts();
     loadLayout();
-  }, [loadScripts, loadLayout]);
+    loadFloatingPositions();
+  }, [loadScripts, loadLayout, loadFloatingPositions]);
 
   // Update dimensions on resize
   useEffect(() => {
@@ -684,18 +685,17 @@ export default function LiveView() {
       <div className="live-view__content">
         {dimensions.width > 0 && dimensions.height > 0 && (
           <>
-            {/* Main panels grid (script and danmu) */}
+            {/* Main panels grid (ammo only now, script and danmu are floating) */}
             <LiveViewGrid
               width={dimensions.width}
               height={dimensions.height}
               onLayoutChange={() => {}}
             >
-              {layout.filter(item => item.i !== 'ammo').map((item) => (
+              {layout.filter(item => item.i === 'ammo').map((item) => (
                 <div key={item.i} className={`panel-container panel-${item.i}`}>
                   <div className="panel-drag-handle">
                     <span className="panel-title">
-                      {item.i === 'script' && '主提词区'}
-                      {item.i === 'danmu' && '公屏互动'}
+                      {item.i === 'ammo' && '话术弹药带'}
                     </span>
                     <span className="panel-resize-hint">⋮⋮</span>
                   </div>
@@ -705,6 +705,9 @@ export default function LiveView() {
                 </div>
               ))}
             </LiveViewGrid>
+            {/* Floating panels - script and danmu */}
+            {renderPanelContent('script')}
+            {renderPanelContent('danmu')}
             {/* Floating slot card panels */}
             {slots.filter(slot => slot.enabled).map((slot) => (
               <SlotCardPanel key={slot.slotId} slot={slot} />

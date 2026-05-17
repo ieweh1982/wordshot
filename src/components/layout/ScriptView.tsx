@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useAmmoStore } from '../../stores/ammoStore';
 import { useThemeStore } from '../../stores/themeStore';
+import { useLayoutStore } from '../../stores/layoutStore';
 import type { Script } from '../../types';
 import './ScriptView.css';
 
@@ -50,6 +51,8 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
   const scrollYRef = useRef<number>(0);
   const speedRef = useRef<number>(1);
   const highlightedIdRef = useRef<string | null>(null);
+  const positionDragRef = useRef<{ startMouseX: number; startMouseY: number; startPosX: number; startPosY: number } | null>(null);
+  const sizeDragRef = useRef<{ startMouseX: number; startMouseY: number; startWidth: number; startHeight: number } | null>(null);
 
   const [state, setState] = useState<ScriptState>(loadScriptState);
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -59,6 +62,9 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
 
   const { slots, currentScripts } = useAmmoStore();
   const activeTheme = useThemeStore().getActiveTheme();
+  const { floatingPositions, setFloatingPosition } = useLayoutStore();
+
+  const floatingPos = floatingPositions.script || { x: 50, y: 80, width: 500, height: 400 };
 
   // Sync font size with display settings
   useEffect(() => {
@@ -263,6 +269,73 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
     };
   }, []);
 
+  // Position drag handlers
+  const handlePositionDragStart = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    positionDragRef.current = {
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startPosX: floatingPos.x,
+      startPosY: floatingPos.y,
+    };
+    document.body.style.cursor = 'move';
+    document.body.style.userSelect = 'none';
+  }, [floatingPos.x, floatingPos.y]);
+
+  // Size drag handlers
+  const handleSizeDragStart = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    sizeDragRef.current = {
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startWidth: floatingPos.width,
+      startHeight: floatingPos.height,
+    };
+    document.body.style.cursor = 'se-resize';
+    document.body.style.userSelect = 'none';
+  }, [floatingPos.width, floatingPos.height]);
+
+  // Global mouse move/up handlers
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (positionDragRef.current) {
+        const deltaX = e.clientX - positionDragRef.current.startMouseX;
+        const deltaY = e.clientY - positionDragRef.current.startMouseY;
+        setFloatingPosition('script', {
+          ...floatingPos,
+          x: positionDragRef.current.startPosX + deltaX,
+          y: positionDragRef.current.startPosY + deltaY,
+        });
+      }
+      if (sizeDragRef.current) {
+        const deltaX = e.clientX - sizeDragRef.current.startMouseX;
+        const deltaY = e.clientY - sizeDragRef.current.startMouseY;
+        setFloatingPosition('script', {
+          ...floatingPos,
+          width: Math.max(200, Math.min(800, sizeDragRef.current.startWidth + deltaX)),
+          height: Math.max(150, Math.min(600, sizeDragRef.current.startHeight + deltaY)),
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      positionDragRef.current = null;
+      sizeDragRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [floatingPos, setFloatingPosition]);
+
   const containerStyle: React.CSSProperties = {
     backgroundColor: 'transparent',
     color: textColor,
@@ -272,22 +345,43 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
 
   return (
     <div
-      ref={containerRef}
-      className={`script-view ${className}`}
-      style={containerStyle}
-      data-opacity={opacity}
-      tabIndex={0}
-      onClick={() => {
-        setState(prev => {
-          const newState = { ...prev, isPlaying: !prev.isPlaying };
-          saveScriptState(newState);
-          window.dispatchEvent(new CustomEvent('script-view-playback', {
-            detail: { isPlaying: newState.isPlaying }
-          }));
-          return newState;
-        });
+      className="floating-panel floating-panel--script"
+      style={{
+        position: 'absolute',
+        left: floatingPos.x,
+        top: floatingPos.y,
+        width: floatingPos.width,
+        height: floatingPos.height,
+        cursor: 'move',
+        userSelect: 'none',
       }}
+      onMouseDown={handlePositionDragStart}
     >
+      <div className="floating-panel__header">
+        <span className="floating-panel__title">主提词区</span>
+        <span
+          className="floating-panel__resize-hint"
+          onMouseDown={handleSizeDragStart}
+        >⋮⋮</span>
+      </div>
+      <div
+        ref={containerRef}
+        className={`script-view ${className}`}
+        style={containerStyle}
+        data-opacity={opacity}
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation();
+          setState(prev => {
+            const newState = { ...prev, isPlaying: !prev.isPlaying };
+            saveScriptState(newState);
+            window.dispatchEvent(new CustomEvent('script-view-playback', {
+              detail: { isPlaying: newState.isPlaying }
+            }));
+            return newState;
+          });
+        }}
+      >
       <div className="script-view-content">
         {scripts.length > 0 ? (
           <div className="script-view-scroll-container">
@@ -345,6 +439,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
           空格: 暂停/继续 | 滚轮: 调速
         </div>
       </div>
+    </div>
     </div>
   );
 };
