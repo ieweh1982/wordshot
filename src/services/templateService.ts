@@ -23,6 +23,7 @@ export interface UpdateTemplateInput {
   totalDurationMinutes?: number;
   patterns?: import('../types').SegmentPattern[];
   repeatCount?: number;
+  freeContent?: string;
 }
 
 export interface CreateSegmentInput {
@@ -43,6 +44,7 @@ export interface UpdateSegmentInput {
   order?: number;
   transition?: string;
   scriptIds?: string[];
+  customContent?: string;
 }
 
 // In-memory cache for templates in renderer
@@ -61,9 +63,11 @@ function loadTemplatesFromStorage(): MainScriptTemplate[] {
       ...t,
       patterns: typeof t.patterns === 'string' ? JSON.parse(t.patterns) : (t.patterns || []),
       repeatCount: t.repeatCount || 1,
+      freeContent: t.freeContent || '',
       segments: (t.segments || []).map((s: any) => ({
         ...s,
         scriptIds: typeof s.scriptIds === 'string' ? JSON.parse(s.scriptIds) : (s.scriptIds || []),
+        customContent: s.customContent || '',
       })),
     }));
   } catch {
@@ -112,9 +116,11 @@ export async function getAllTemplates(): Promise<MainScriptTemplate[]> {
     ...t,
     patterns: typeof t.patterns === 'string' ? JSON.parse(t.patterns) : (t.patterns || []),
     repeatCount: t.repeatCount || 1,
+    freeContent: t.freeContent || '',
     segments: (t.segments || []).map((s: any) => ({
       ...s,
       scriptIds: typeof s.scriptIds === 'string' ? JSON.parse(s.scriptIds) : (s.scriptIds || []),
+      customContent: s.customContent || '',
     })),
   }));
   return templatesCache;
@@ -122,10 +128,25 @@ export async function getAllTemplates(): Promise<MainScriptTemplate[]> {
 
 // Get template by ID
 export async function getTemplateById(id: string): Promise<MainScriptTemplate | undefined> {
+  let template: any;
   if (hasElectronAPI()) {
-    return window.electronAPI!.getTemplateById(id);
+    template = await window.electronAPI!.getTemplateById(id);
+  } else {
+    template = templatesCache.find(t => t.id === id);
   }
-  return templatesCache.find(t => t.id === id);
+  if (!template) return undefined;
+  // Normalize the template same as in getAllTemplates
+  return {
+    ...template,
+    patterns: typeof template.patterns === 'string' ? JSON.parse(template.patterns) : (template.patterns || []),
+    repeatCount: template.repeatCount || 1,
+    freeContent: template.freeContent || '',
+    segments: (template.segments || []).map((s: any) => ({
+      ...s,
+      scriptIds: typeof s.scriptIds === 'string' ? JSON.parse(s.scriptIds) : (s.scriptIds || []),
+      customContent: s.customContent || '',
+    })),
+  };
 }
 
 // Create a new template

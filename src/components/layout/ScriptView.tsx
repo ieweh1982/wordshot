@@ -119,35 +119,34 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
     const containerRect = container.getBoundingClientRect();
     const containerCenterY = containerRect.top + containerRect.height / 2;
 
-    // Find which script element is at the center
     const content = contentRef.current;
     if (!content) return;
 
     const children = content.children;
+    let bestIndex = -1;
+    let bestDistance = Infinity;
 
+    // Find the child closest to the center line
     for (let i = 0; i < children.length; i++) {
       const child = children[i] as HTMLElement;
       const rect = child.getBoundingClientRect();
+      const childCenterY = rect.top + rect.height / 2;
+      const distance = Math.abs(childCenterY - containerCenterY);
 
-      // Check if this element overlaps with the center
-      const elementTop = rect.top;
-      const elementBottom = rect.bottom;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
 
-      if (containerCenterY >= elementTop && containerCenterY <= elementBottom) {
-        // Get script id from the data-key attribute
-        const key = child.getAttribute('data-key');
-        if (key) {
-          // Extract the original script id (before the -idx suffix)
-          const lastDashIndex = key.lastIndexOf('-');
-          const scriptId = lastDashIndex > 0 ? key.substring(0, lastDashIndex) : key;
+    if (bestIndex >= 0) {
+      // Map to original script index (first copy only: 0 to scripts.length-1)
+      const scriptIndex = bestIndex % scripts.length;
+      const scriptId = scripts[scriptIndex]?.id;
 
-          // Only highlight from first copy (index < scripts.length)
-          if (i < scripts.length && highlightedIdRef.current !== scriptId) {
-            highlightedIdRef.current = scriptId;
-            setHighlightedScriptId(scriptId);
-          }
-        }
-        break;
+      if (scriptId && highlightedIdRef.current !== scriptId) {
+        highlightedIdRef.current = scriptId;
+        setHighlightedScriptId(scriptId);
       }
     }
   };
@@ -314,10 +313,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
                       </div>
                     ))}
                   </div>
-                  <div className="script-divider">
-                    <span>---</span>
                   </div>
-                </div>
               ))}
             </div>
           </div>

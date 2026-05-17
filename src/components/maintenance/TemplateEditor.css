@@ -757,6 +757,130 @@
   height: 16px;
 }
 
+/* ============ Free Content Section ============ */
+.free-content-section {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.free-content-section__header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.free-content-section__header h2 {
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.free-content-section__hint {
+  font-size: 0.75rem;
+  opacity: 0.5;
+}
+
+.free-content-section__textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.05);
+  color: white;
+  font-size: 0.9rem;
+  resize: vertical;
+  min-height: 120px;
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+.free-content-section__textarea:focus {
+  outline: none;
+  border-color: var(--accent-color, #4a9eff);
+}
+
+.free-content-section__textarea::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+/* ============ Custom Content Section ============ */
+.custom-content-section {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.custom-content-section__header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.custom-content-section__header h2 {
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.custom-content-section__hint {
+  font-size: 0.75rem;
+  opacity: 0.5;
+}
+
+.custom-content-section__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.custom-content-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.custom-content-item__label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.custom-content-item__name {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.custom-content-item__tag {
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  color: rgba(0, 0, 0, 0.8);
+  font-weight: 500;
+}
+
+.custom-content-item__textarea {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.05);
+  color: white;
+  font-size: 0.85rem;
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
+.custom-content-item__textarea:focus {
+  outline: none;
+  border-color: var(--accent-color, #4a9eff);
+}
+
+.custom-content-item__textarea::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
 /* ============ Responsive ============ */
 @media (max-width: 768px) {
   .template-editor__content {

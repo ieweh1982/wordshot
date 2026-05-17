@@ -10,8 +10,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: transparent;
-  color: var(--script-text);
+  background: var(--theme-background, transparent);
+  color: var(--theme-text, #ffffff);
   opacity: var(--script-opacity);
   outline: none;
   user-select: none;
@@ -49,7 +49,7 @@
   left: 0;
   right: 0;
   height: 2px;
-  background: var(--highlight-color);
+  background: var(--highlight-color, var(--theme-highlight, #4CAF50));
   opacity: 0.3;
   z-index: 10;
   pointer-events: none;
@@ -71,12 +71,13 @@
 /* 单条话术项 - 使用更具体的选择器覆盖全局样式 */
 .script-view .script-item {
   padding: 0.5rem 0;
-  background: transparent !important;
+  background: transparent;
 }
 
 /* 单行文字 */
 .script-view .script-line {
-  background: transparent !important;
+  background: transparent;
+  color: var(--theme-text, #ffffff);
 }
 
 /* 话术内容包装 */
@@ -87,16 +88,19 @@
 
 /* 单行文字 */
 .script-line {
-  transition: color 0.3s ease;
+  transition: color 0.3s ease, opacity 0.3s ease;
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   color: inherit;
 }
 
-/* 当前脚本的行 - 绿色高亮 */
-.script-line.current-script {
-  opacity: 1;
-  color: var(--highlight-color);
+/* 当前脚本的行 - 明亮绿色高亮 */
+.script-view .script-line.current-script {
+  opacity: 1 !important;
+  color: #00FF00 !important;
+  font-weight: 900;
+  background: rgba(0, 255, 0, 0.15);
+  border-radius: 4px;
 }
 
 /* 已滚动过的行 - 渐隐效果 */
@@ -114,7 +118,7 @@
 }
 
 .script-divider span {
-  color: var(--highlight-color);
+  color: var(--highlight-color, var(--theme-highlight, #4CAF50));
 }
 
 .script-view-meta {

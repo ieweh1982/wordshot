@@ -10,7 +10,7 @@ import { useAmmoStore } from '../stores/ammoStore';
 import { useScriptStore } from '../stores/scriptStore';
 import type { TemplateTheme, MainScriptTemplate, MainScript, DisplayProfile, Script } from '../types';
 import {
-  generateMainScript,
+  generateMainScriptFromTemplate,
   getThemeDisplayName,
   DEDUP_TIME_WINDOWS,
 } from '../services/ScriptEngine';
@@ -556,7 +556,9 @@ export default function LiveView() {
     setCurrentSession(session.id);
 
     // Load template and scripts
+    console.log('[LiveView] Loading template:', templateId);
     const template = await templateService.getTemplateById(templateId);
+    console.log('[LiveView] Loaded template:', template);
     const allScripts = useScriptStore.getState().scripts;
 
     // Flatten scripts from template segments
@@ -573,8 +575,15 @@ export default function LiveView() {
     }
     setTemplateScripts(scripts);
 
-    // Generate main script using ScriptEngine
-    const mainScript = generateMainScript({
+    // Generate main script using ScriptEngine (handles both scriptIds and freeContent)
+    console.log('[LiveView] Template for generation:', JSON.stringify({
+      id: template?.id,
+      name: template?.name,
+      segmentsCount: template?.segments?.length,
+      freeContent: template?.freeContent,
+      scriptIdsCount: template?.segments?.reduce((acc, seg) => acc + (seg.scriptIds?.length || 0), 0)
+    }));
+    const mainScript = await generateMainScriptFromTemplate({
       templateId,
       sessionId: session.id,
       deduplicationConfig: {
@@ -582,7 +591,8 @@ export default function LiveView() {
         timeWindowMs: DEDUP_TIME_WINDOWS['30min'],
         maxRepeatPerWindow: 1,
       },
-    });
+    }, scripts);
+    console.log('[LiveView] Generated mainScript with orderedScripts count:', mainScript.orderedScripts.length);
 
     setCurrentMainScript(mainScript);
 
@@ -635,8 +645,12 @@ export default function LiveView() {
   const renderPanelContent = (panelId: string) => {
     switch (panelId) {
       case 'script':
-        // Pass template scripts if available, otherwise ScriptView will use ammo slots
-        return <ScriptView scripts={templateScripts.length > 0 ? templateScripts : undefined} />;
+        // Use orderedScripts from currentMainScript if available, otherwise fall back to templateScripts
+        const mainScripts = currentMainScript?.orderedScripts;
+        const viewScripts = mainScripts && mainScripts.length > 0
+          ? mainScripts.map(os => os.script)
+          : (templateScripts.length > 0 ? templateScripts : undefined);
+        return <ScriptView scripts={viewScripts} />;
       case 'danmu':
         return <DanmuPanel />;
       default:

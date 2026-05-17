@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { DanmuCaptureConfig as DanmuCaptureConfigType, DanmuCaptureWindow, Danmu } from '../../types';
+import { RegionSelector } from './RegionSelector';
+import { danmuStore } from '../../stores/danmuStore';
 
 interface Props {
   className?: string;
@@ -8,6 +10,9 @@ interface Props {
 const CAPTURE_INTERVALS = [
   { value: 2000, label: '2秒' },
   { value: 5000, label: '5秒' },
+  { value: 10000, label: '10秒' },
+  { value: 15000, label: '15秒' },
+  { value: 20000, label: '20秒' },
 ];
 
 const OCR_ENGINES = [
@@ -31,18 +36,21 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
   const [testResults, setTestResults] = useState<Danmu[]>([]);
   const [captureStatus, setCaptureStatus] = useState<'stopped' | 'capturing' | 'paused'>('stopped');
   const [error, setError] = useState<string | null>(null);
+  const [showRegionSelector, setShowRegionSelector] = useState(false);
+  const [captureRegion, setCaptureRegion] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [isCapturing, setIsCapturing] = useState(false); // 独立于testing的持续抓取状态
 
   // Load initial data
   useEffect(() => {
     loadConfig();
     loadWindows();
+    // Query current capture status on mount
+    queryCaptureStatus();
 
-    // Subscribe to danmu events
+    // Subscribe to danmu events - only for local testResults display
+    // Note: danmuStore updates are handled globally in App.tsx DanmuListener
+    // IMPORTANT: Do NOT listen to danmu:batch here - removeAllListeners would break App.tsx listener
     if (window.electronAPI) {
-      window.electronAPI.onDanmuBatch((danmuList: Danmu[]) => {
-        setTestResults(prev => [...prev.slice(-20), ...danmuList].slice(-50));
-      });
-
       window.electronAPI.onDanmuError((err: string) => {
         setError(err);
         setTimeout(() => setError(null), 5000);
@@ -50,12 +58,13 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
 
       window.electronAPI.onDanmuStatus((status: { status: 'capturing' | 'paused' | 'stopped' }) => {
         setCaptureStatus(status.status);
+        setIsCapturing(status.status === 'capturing');
       });
     }
 
     return () => {
+      // Only remove error and status listeners - danmu:batch is handled by App.tsx
       if (window.electronAPI) {
-        window.electronAPI.removeAllListeners('danmu:batch');
         window.electronAPI.removeAllListeners('danmu:error');
         window.electronAPI.removeAllListeners('danmu:status');
       }
@@ -67,6 +76,11 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
     try {
       const cfg = await window.electronAPI.getDanmuConfig();
       setConfig(cfg);
+      // 加载已保存的捕获区域
+      const region = await window.electronAPI.getDanmuCaptureRegion();
+      if (region) {
+        setCaptureRegion(region);
+      }
     } catch (err) {
       console.error('Failed to load config:', err);
     }
@@ -83,6 +97,74 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const queryCaptureStatus = useCallback(async () => {
+    if (!window.electronAPI) return;
+    try {
+      const status = await window.electronAPI.getDanmuCaptureStatus();
+      if (status) {
+        setCaptureStatus(status.status);
+        setIsCapturing(status.isCapturing);
+      }
+    } catch (err) {
+      console.error('Failed to query capture status:', err);
+    }
+  }, []);
+
+  const loadAllWindows = useCallback(async () => {
+    if (!window.electronAPI) return;
+    setLoading(true);
+    try {
+      const windowList = await window.electronAPI.getAllDanmuWindows();
+      setWindows(windowList);
+    } catch (err) {
+      console.error('Failed to load all windows:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const findDouyinWindows = useCallback(async () => {
+    if (!window.electronAPI) return;
+    setLoading(true);
+    try {
+      // First try to find the 互动消息区 window directly
+      const hudongWindow = await window.electronAPI.findHudongWindow();
+      if (hudongWindow) {
+        console.log('[DanmuCapture] Found 互动消息区:', hudongWindow);
+        setWindows([hudongWindow]);
+        setLoading(false);
+        return;
+      }
+
+      // Fallback: get all windows
+      const windowList = await window.electronAPI.getAllDanmuWindows();
+      setWindows(windowList);
+    } catch (err) {
+      console.error('Failed to find Douyin windows:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleStartRegionSelect = useCallback(() => {
+    setShowRegionSelector(true);
+  }, []);
+
+  const handleRegionSelected = useCallback(async (region: { x: number; y: number; width: number; height: number }) => {
+    setShowRegionSelector(false);
+    setCaptureRegion(region);
+    setSelectedWindow(null); // Clear window selection when using region
+
+    if (window.electronAPI) {
+      await window.electronAPI.setDanmuCaptureRegion(region);
+    }
+    console.log('[DanmuCapture] Region selected:', region);
+  }, []);
+
+  const handleRegionCancel = useCallback(() => {
+    setShowRegionSelector(false);
   }, []);
 
   const handleSelectWindow = useCallback(async (windowId: string) => {
@@ -179,12 +261,64 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
     if (!window.electronAPI || !config) return;
     try {
       await window.electronAPI.updateDanmuConfig(config);
+      // 同时保存捕获区域
+      if (captureRegion) {
+        await window.electronAPI.setDanmuCaptureRegion(captureRegion);
+      }
       alert('配置已保存');
     } catch (err) {
       console.error('Failed to save config:', err);
       alert('保存失败');
     }
-  }, [config]);
+  }, [config, captureRegion]);
+
+  // 开始持续抓取
+  const handleStartCapture = useCallback(async () => {
+    if (!window.electronAPI) return;
+    try {
+      await window.electronAPI.startDanmuCapture();
+      setIsCapturing(true);
+      setCaptureStatus('capturing');
+    } catch (err) {
+      console.error('Failed to start capture:', err);
+      setError('启动失败');
+      setTimeout(() => setError(null), 3000);
+    }
+  }, []);
+
+  // 停止持续抓取
+  const handleStopCapture = useCallback(async () => {
+    if (!window.electronAPI) return;
+    try {
+      await window.electronAPI.stopDanmuCapture();
+      setIsCapturing(false);
+      setCaptureStatus('stopped');
+    } catch (err) {
+      console.error('Failed to stop capture:', err);
+    }
+  }, []);
+
+  // 暂停抓取
+  const handlePauseCapture = useCallback(async () => {
+    if (!window.electronAPI) return;
+    try {
+      await window.electronAPI.pauseDanmuCapture();
+      setCaptureStatus('paused');
+    } catch (err) {
+      console.error('Failed to pause capture:', err);
+    }
+  }, []);
+
+  // 恢复抓取
+  const handleResumeCapture = useCallback(async () => {
+    if (!window.electronAPI) return;
+    try {
+      await window.electronAPI.resumeDanmuCapture();
+      setCaptureStatus('capturing');
+    } catch (err) {
+      console.error('Failed to resume capture:', err);
+    }
+  }, []);
 
   const getStatusText = () => {
     switch (captureStatus) {
@@ -245,23 +379,57 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
                     className={`window-item ${selectedWindow?.id === win.id ? 'selected' : ''}`}
                     onClick={() => handleSelectWindow(win.id)}
                   >
-                    <span className="window-title">{win.title}</span>
+                    <div className="window-info">
+                      <span className="window-title">{win.title}</span>
+                      {win.isChildWindow && <span className="child-window-badge">子窗口</span>}
+                    </div>
                     <span className="window-process">{win.processName}</span>
                   </div>
                 ))
               )}
             </div>
-            <button
-              className="btn-secondary refresh-btn"
-              onClick={loadWindows}
-              disabled={loading}
-            >
-              刷新窗口
-            </button>
+            <div className="window-buttons">
+              <button
+                className="btn-secondary refresh-btn"
+                onClick={loadWindows}
+                disabled={loading}
+              >
+                刷新窗口
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={loadAllWindows}
+                disabled={loading}
+                title="包括子窗口"
+              >
+                获取所有窗口
+              </button>
+              <button
+                className="btn-primary"
+                onClick={findDouyinWindows}
+                disabled={loading}
+              >
+                查找直播伴侣
+              </button>
+              <button
+                className="btn-primary"
+                onClick={handleStartRegionSelect}
+                style={{ marginTop: 8 }}
+              >
+                选择屏幕区域
+              </button>
+            </div>
           </div>
           {selectedWindow && (
             <div className="selected-window-info">
               已选择窗口: <strong>{selectedWindow.title}</strong>
+              {selectedWindow.isChildWindow && <span className="child-indicator"> (子窗口)</span>}
+            </div>
+          )}
+          {captureRegion && (
+            <div className="selected-window-info">
+              已选择区域: <strong>{captureRegion.width} × {captureRegion.height}</strong>
+              <span className="region-coords"> (x: {captureRegion.x}, y: {captureRegion.y})</span>
             </div>
           )}
         </div>
@@ -269,19 +437,44 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
         {/* Capture Frequency Section */}
         <div className="config-section">
           <h3>抓取频率</h3>
-          <div className="radio-group">
-            {CAPTURE_INTERVALS.map(opt => (
-              <label key={opt.value} className="radio-label">
-                <input
-                  type="radio"
-                  name="captureInterval"
-                  value={opt.value}
-                  checked={config?.captureIntervalMs === opt.value}
-                  onChange={() => handleIntervalChange(opt.value)}
-                />
-                <span className="radio-custom" />
-                {opt.label}
-              </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="number"
+              min="1"
+              max="60"
+              step="1"
+              value={(config?.captureIntervalMs || 5000) / 1000}
+              onChange={(e) => handleIntervalChange((parseInt(e.target.value) || 5) * 1000)}
+              style={{
+                width: 70,
+                padding: '6px 10px',
+                borderRadius: 6,
+                border: '1px solid var(--border-color)',
+                background: 'var(--input-bg)',
+                color: '#e0e0e0',
+                fontSize: 14,
+                outline: 'none',
+              }}
+            />
+            <span style={{ color: '#e0e0e0', fontSize: 14 }}>秒 (推荐 10秒以上)</span>
+          </div>
+          <div style={{ marginTop: 12, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {[2, 5, 10, 15, 20, 30].map(val => (
+              <button
+                key={val}
+                onClick={() => handleIntervalChange(val * 1000)}
+                style={{
+                  padding: '4px 12px',
+                  borderRadius: 6,
+                  border: config?.captureIntervalMs === val * 1000 ? '2px solid #4a90d9' : '1px solid #555',
+                  background: config?.captureIntervalMs === val * 1000 ? 'rgba(74, 144, 217, 0.2)' : 'transparent',
+                  color: config?.captureIntervalMs === val * 1000 ? '#4a90d9' : '#aaa',
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                {val}秒
+              </button>
             ))}
           </div>
         </div>
@@ -345,26 +538,80 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
           )}
         </div>
 
-        {/* Test Section */}
+        {/* Capture Control Section */}
         <div className="config-section">
-          <h3>测试功能</h3>
-          <div className="test-controls">
-            {!testing ? (
-              <button
-                className="btn-primary"
-                onClick={handleTestCapture}
-                disabled={!selectedWindow || captureStatus === 'capturing'}
-              >
-                测试弹幕抓取
-              </button>
-            ) : (
-              <button
-                className="btn-danger"
-                onClick={handleStopTest}
-              >
-                停止测试
-              </button>
-            )}
+          <h3>弹幕抓取控制</h3>
+          <div className="capture-controls">
+            {/* 状态指示器 */}
+            <div className="status-indicator">
+              <div
+                className="status-dot"
+                style={{
+                  backgroundColor: isCapturing ? '#4caf50' : captureStatus === 'paused' ? '#ff9800' : '#999'
+                }}
+              />
+              <span>{isCapturing ? '采集中' : captureStatus === 'paused' ? '已暂停' : '已停止'}</span>
+            </div>
+
+            {/* 抓取控制按钮 */}
+            <div className="capture-buttons">
+              {!isCapturing ? (
+                <button
+                  className="btn-primary"
+                  onClick={handleStartCapture}
+                  disabled={!selectedWindow && !captureRegion}
+                >
+                  开始抓取
+                </button>
+              ) : (
+                <button
+                  className="btn-danger"
+                  onClick={handleStopCapture}
+                >
+                  停止抓取
+                </button>
+              )}
+
+              {isCapturing && captureStatus === 'capturing' && (
+                <button
+                  className="btn-secondary"
+                  onClick={handlePauseCapture}
+                >
+                  暂停
+                </button>
+              )}
+
+              {isCapturing && captureStatus === 'paused' && (
+                <button
+                  className="btn-secondary"
+                  onClick={handleResumeCapture}
+                >
+                  继续
+                </button>
+              )}
+            </div>
+
+            {/* 测试按钮 */}
+            <div className="test-buttons">
+              {!testing ? (
+                <button
+                  className="btn-outline"
+                  onClick={handleTestCapture}
+                  disabled={(!selectedWindow && !captureRegion) || isCapturing}
+                >
+                  测试抓取 (10秒)
+                </button>
+              ) : (
+                <button
+                  className="btn-outline btn-danger"
+                  onClick={handleStopTest}
+                >
+                  停止测试
+                </button>
+              )}
+            </div>
+
+            {/* 保存配置按钮 */}
             <button
               className="btn-secondary"
               onClick={handleSaveConfig}
@@ -378,7 +625,7 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
             <div className="danmu-list">
               {testResults.length === 0 ? (
                 <div className="empty-text">
-                  {testing ? '等待弹幕数据...' : '暂无抓取结果'}
+                  {testing || isCapturing ? '等待弹幕数据...' : '暂无抓取结果'}
                 </div>
               ) : (
                 testResults.map((danmu, idx) => (
@@ -396,6 +643,13 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
           </div>
         </div>
       </div>
+
+      {showRegionSelector && (
+        <RegionSelector
+          onRegionSelected={handleRegionSelected}
+          onCancel={handleRegionCancel}
+        />
+      )}
 
       <style>{`
         .danmu-capture-config {
@@ -518,9 +772,23 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
           background: #e3f2fd;
         }
 
+        .window-info {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
         .window-title {
           font-size: 13px;
           color: #333;
+        }
+
+        .child-window-badge {
+          font-size: 10px;
+          background: #ff9800;
+          color: white;
+          padding: 2px 6px;
+          border-radius: 3px;
         }
 
         .window-process {
@@ -532,6 +800,17 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
           align-self: flex-start;
         }
 
+        .window-buttons {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .child-indicator {
+          color: #ff9800;
+          font-size: 12px;
+        }
+
         .selected-window-info {
           margin-top: 12px;
           font-size: 13px;
@@ -540,6 +819,12 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
 
         .selected-window-info strong {
           color: #4a90d9;
+        }
+
+        .region-coords {
+          color: #999;
+          font-size: 12px;
+          margin-left: 8px;
         }
 
         .loading-text,
@@ -797,6 +1082,56 @@ export const DanmuCaptureConfig: React.FC<Props> = ({ className }) => {
 
         .btn-danger:hover {
           background: #c9302c;
+        }
+
+        .btn-outline {
+          padding: 8px 16px;
+          background: transparent;
+          color: #4a90d9;
+          border: 1px solid #4a90d9;
+          border-radius: 6px;
+          font-size: 13px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .btn-outline:hover {
+          background: #4a90d9;
+          color: white;
+        }
+
+        .btn-outline:disabled {
+          border-color: #ccc;
+          color: #ccc;
+          cursor: not-allowed;
+        }
+
+        .btn-outline.btn-danger {
+          border-color: #d9534f;
+          color: #d9534f;
+        }
+
+        .btn-outline.btn-danger:hover {
+          background: #d9534f;
+          color: white;
+        }
+
+        .capture-controls {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .capture-buttons {
+          display: flex;
+          gap: 8px;
+        }
+
+        .test-buttons {
+          display: flex;
+          gap: 8px;
         }
       `}</style>
     </div>

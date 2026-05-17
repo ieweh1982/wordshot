@@ -5,11 +5,12 @@ import DanmuCaptureConfig from '../components/maintenance/DanmuCaptureConfig';
 import ImportExport from '../components/maintenance/ImportExport';
 import Settings from '../components/maintenance/Settings';
 import AIConfiguration from '../components/maintenance/AIConfiguration';
+import PersonaConfiguration from '../components/maintenance/PersonaConfiguration';
 import SlotConfiguration from '../components/maintenance/SlotConfiguration';
 import ThemeConfiguration from '../components/maintenance/ThemeConfiguration';
 import './Maintenance.css';
 
-type MaintenanceTab = 'scripts' | 'templates' | 'danmu' | 'display' | 'ai' | 'import' | 'theme' | 'settings';
+type MaintenanceTab = 'scripts' | 'templates' | 'danmu' | 'display' | 'ai' | 'import' | 'theme' | 'settings' | 'persona';
 
 export default function Maintenance() {
   const [activeTab, setActiveTab] = useState<MaintenanceTab>('scripts');
@@ -23,6 +24,7 @@ export default function Maintenance() {
     { id: 'import', label: '导入导出' },
     { id: 'theme', label: '主题配置' },
     { id: 'settings', label: '系统设置' },
+    { id: 'persona', label: '角色配置' },
   ];
 
   return (
@@ -59,6 +61,7 @@ export default function Maintenance() {
         {activeTab === 'import' && <ImportExport />}
         {activeTab === 'theme' && <ThemeConfiguration />}
         {activeTab === 'settings' && <Settings />}
+        {activeTab === 'persona' && <PersonaConfiguration />}
       </main>
     </div>
   );

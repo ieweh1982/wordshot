@@ -54,6 +54,8 @@ export const templateStore = create<TemplateStore>((set, get) => ({
   ...initialState,
 
   loadTemplates: () => {
+    // Skip if already loading to prevent double-fetch in Strict Mode
+    if (get().isLoading) return;
     set({ isLoading: true });
     templateService.getAllTemplates().then(templates => {
       // Ensure templates have patterns and repeatCount fields
@@ -61,9 +63,11 @@ export const templateStore = create<TemplateStore>((set, get) => ({
         ...t,
         patterns: t.patterns || [],
         repeatCount: t.repeatCount || 1,
-        segments: t.segments.map(s => ({
+        freeContent: t.freeContent || '',
+        segments: (t.segments || []).map(s => ({
           ...s,
           scriptIds: s.scriptIds || [],
+          customContent: s.customContent || '',
         })),
       }));
       set({ templates: normalizedTemplates, isLoading: false });
@@ -109,7 +113,7 @@ export const templateStore = create<TemplateStore>((set, get) => ({
       name,
       totalDurationMinutes,
       segments: [],
-      patterns: defaultPatterns[theme],
+      patterns: [],
       repeatCount: 1,
     });
     set((state) => ({ templates: [...state.templates, template], selectedTemplateId: id }));

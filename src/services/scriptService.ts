@@ -186,6 +186,16 @@ export async function searchScripts(query: string): Promise<Script[]> {
   return scriptsCache.filter(s => s.content.toLowerCase().includes(lowerQuery));
 }
 
+// Get scripts by trigger types
+export function getScriptsByTrigger(triggerTypes: TriggerType[]): Script[] {
+  if (!triggerTypes || triggerTypes.length === 0) {
+    return [];
+  }
+  return scriptsCache.filter(script =>
+    script.triggers && script.triggers.some(t => triggerTypes.includes(t))
+  );
+}
+
 // Get scripts by category
 export function getScriptsByCategory(category: ScriptCategory): Script[] {
   return scriptsCache.filter(s => s.category === category);

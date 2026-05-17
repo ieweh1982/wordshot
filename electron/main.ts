@@ -22,33 +22,33 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false
     }
-  })
+  });
 
   // Set background color to transparent
-  mainWindow.setBackgroundColor('#00000000')
+  mainWindow.setBackgroundColor('#00000000');
 
   if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173')
-    mainWindow.webContents.openDevTools()
+    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
   // Initialize HotkeyManager with window reference
-  const hotkeyManager = HotkeyManager.getInstance()
-  hotkeyManager.initialize(mainWindow)
+  const hotkeyManager = HotkeyManager.getInstance();
+  hotkeyManager.initialize(mainWindow);
 
-  // Initialize DanmuCaptureService with window reference
-  const danmuCaptureService = DanmuCaptureService.getInstance()
-  danmuCaptureService.initialize(mainWindow)
+  // Initialize DanmuCaptureService - runs in main process, can directly read config files
+  const danmuCaptureService = DanmuCaptureService.getInstance();
+  danmuCaptureService.initialize(mainWindow);
 
   // Register IPC handlers
-  console.log('[Main] About to register handlers...')
-  registerHotkeyHandlers()
-  registerDatabaseHandlers()
-  console.log('[Main] All handlers registered')
+  console.log('[Main] About to register handlers...');
+  registerHotkeyHandlers();
+  registerDatabaseHandlers();
+  console.log('[Main] All handlers registered');
 
-  return mainWindow
+  return mainWindow;
 }
 
 app.whenReady().then(() => {

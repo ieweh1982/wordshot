@@ -172,6 +172,7 @@ export async function generateMainScriptFromTemplate(
   const orderedScripts: OrderedScript[] = [];
   let order = 0;
 
+  // Process scripts from template segments
   for (const segment of template.segments || []) {
     for (const scriptId of segment.scriptIds || []) {
       const script = scripts.find(s => s.id === scriptId);
@@ -184,6 +185,32 @@ export async function generateMainScriptFromTemplate(
         });
         order++;
       }
+    }
+  }
+
+  // Process freeContent - each line becomes a script
+  if (template.freeContent && template.freeContent.trim()) {
+    const freeContentLines = template.freeContent.split('\n').filter(line => line.trim());
+    for (const line of freeContentLines) {
+      const fakeScript: Script = {
+        id: `free-content-${order}-${Date.now()}`,
+        category: 'thanks', // Use 'thanks' as default category for free content
+        content: line.trim(),
+        color: '#ffffff',
+        priority: 5,
+        triggers: [],
+        tags: ['free-content'],
+        usageCount: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      orderedScripts.push({
+        order,
+        script: fakeScript,
+        segmentId: 'free-content-segment',
+        segmentName: '自由输入',
+      });
+      order++;
     }
   }
 

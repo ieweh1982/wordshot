@@ -2,8 +2,8 @@
  * DanmuCaptureService - Window-based danmu capture service
  *
  * Captures danmu (live stream comments) from selected windows using:
- * 1. DOM injection for direct text reading (preferred)
- * 2. OCR fallback using Tesseract.js
+ * 1. Screen region capture + OCR
+ * 2. Cloud OCR via AI providers with vision capabilities
  *
  * Features:
  * - Window selection by title matching
@@ -15,6 +15,7 @@
 import { ipcMain, BrowserWindow, desktopCapturer, screen } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { randomUUID } from 'crypto';
 import {
   Danmu,
@@ -29,6 +30,7 @@ import {
   classifyDanmuType,
   isValidDanmuText,
 } from './ocrService';
+import WindowsWindowEnumerator from '../../electron/services/WindowsWindowEnumerator';
 
 // IPC Channel names for danmu capture
 export const DANMU_CHANNELS = {
@@ -54,6 +56,9 @@ export const DANMU_CHANNELS = {
 // Config file path
 const CONFIG_DIR = path.join(process.cwd(), 'data', 'config');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'danmu_capture.json');
+
+// AI Config file path (stored as file, not localStorage)
+const AI_PROVIDERS_FILE = path.join(CONFIG_DIR, 'ai_providers.json');
 
 // Ensure config directory exists
 function ensureConfigDir(): void {
@@ -124,9 +129,29 @@ class DanmuCaptureService {
    * Register IPC handlers for communication with renderer
    */
   private registerIpcHandlers(): void {
-    // Get available windows
+    // Get available windows (desktopCapturer)
     ipcMain.handle(DANMU_CHANNELS.GET_WINDOWS, async () => {
       return this.getAvailableWindows();
+    });
+
+    // Get all windows including child windows (Windows API)
+    ipcMain.handle('danmu:get-all-windows', async () => {
+      return this.getAllWindowsIncludingChildren();
+    });
+
+    // Find windows by process name
+    ipcMain.handle('danmu:find-windows-by-process', async (_event, processName: string) => {
+      return this.findWindowsByProcess(processName);
+    });
+
+    // Find windows by title
+    ipcMain.handle('danmu:find-windows-by-title', async (_event, titlePattern: string) => {
+      return this.findWindowsByTitle(titlePattern);
+    });
+
+    // Find 互动消息区 window
+    ipcMain.handle('danmu:find-hudong-window', async () => {
+      return this.findHudongWindow();
     });
 
     // Select a window for capture
@@ -164,7 +189,99 @@ class DanmuCaptureService {
       return this.resumeCapture();
     });
 
+    // Get capture status
+    ipcMain.handle('danmu:get-capture-status', async () => {
+      return {
+        isCapturing: this.isCapturing,
+        isPaused: this.isPaused,
+        status: this.isCapturing ? (this.isPaused ? 'paused' : 'capturing') : 'stopped'
+      };
+    });
+
+    // Capture screen region
+    ipcMain.handle('danmu:capture-region', async (_event, region: { x: number; y: number; width: number; height: number }) => {
+      return this.captureRegion(region);
+    });
+
+    // Set capture region
+    ipcMain.handle('danmu:set-capture-region', async (_event, region: { x: number; y: number; width: number; height: number }) => {
+      this.setCaptureRegion(region);
+      return true;
+    });
+
+    // Get capture region
+    ipcMain.handle('danmu:get-capture-region', async () => {
+      return this.getCaptureRegion();
+    });
+
+    // Get AI provider for OCR - reads from localStorage via renderer
+    ipcMain.handle('danmu:get-ocr-provider', async () => {
+      try {
+        // Query localStorage in renderer via executeJavaScript
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          const result = await this.mainWindow.webContents.executeJavaScript(`
+            (function() {
+              const item = localStorage.getItem('wordshot_config_ai_providers.json');
+              if (item) {
+                try {
+                  const config = JSON.parse(item);
+                  const enabled = config.providers && config.providers.find(function(p) { return p.enabled; });
+                  if (enabled) {
+                    return {
+                      baseURL: enabled.baseURL,
+                      apiKey: enabled.apiKey || undefined,
+                      model: enabled.model,
+                      timeout: enabled.timeout || 120000
+                    };
+                  }
+                } catch (e) {}
+              }
+              return null;
+            })()
+          `);
+          if (result) {
+            console.log('[DanmuCapture] AI provider from localStorage:', result.baseURL);
+            return result;
+          }
+        }
+      } catch (error) {
+        console.error('[DanmuCapture] Error getting OCR provider via IPC:', error);
+      }
+      return null;
+    });
+
     console.log('[DanmuCapture] IPC handlers registered');
+  }
+
+  /**
+   * Get enabled AI provider from config file
+   * First checks localStorage (where UI saves AI config), then falls back to file system
+   */
+  private getOcrProvider(): { baseURL: string; apiKey?: string; model: string; timeout: number } | null {
+    try {
+      // First try localStorage (where UI saves AI config)
+      // Note: executeJavaScript is async, but we need a sync result here
+      // The renderer needs to have saved the config to localStorage first
+
+      // Fall back to file system
+      if (fs.existsSync(AI_PROVIDERS_FILE)) {
+        const content = fs.readFileSync(AI_PROVIDERS_FILE, 'utf-8');
+        const config = JSON.parse(content);
+        const enabledProvider = config.providers?.find((p: any) => p.enabled);
+        if (enabledProvider) {
+          console.log('[DanmuCapture] AI provider from file system:', enabledProvider.baseURL);
+          return {
+            baseURL: enabledProvider.baseURL,
+            apiKey: enabledProvider.apiKey || undefined,
+            model: enabledProvider.model,
+            timeout: enabledProvider.timeout || 120000,
+          };
+        }
+      }
+    } catch (error) {
+      console.error('[DanmuCapture] Error reading AI providers:', error);
+    }
+    return null;
   }
 
   /**
@@ -238,17 +355,254 @@ class DanmuCaptureService {
   }
 
   /**
+   * Get all windows including child windows using Windows API
+   */
+  public async getAllWindowsIncludingChildren(): Promise<DanmuCaptureWindow[]> {
+    try {
+      const enumerator = WindowsWindowEnumerator.getInstance();
+      const allWindows = await enumerator.getAllWindows();
+
+      // Filter to only include windows with titles (visible windows)
+      const visibleWindows = allWindows.filter((w) => w.title && w.title.length > 0);
+
+      const windows: DanmuCaptureWindow[] = visibleWindows.map((w) => ({
+        id: w.hwnd,
+        title: w.title,
+        processName: w.processName,
+        position: w.rect,
+        selected: this.selectedWindow?.id === w.hwnd,
+        isChildWindow: w.level > 0,
+        parentHwnd: w.parentHwnd,
+      }));
+
+      return windows;
+    } catch (error) {
+      console.error('[DanmuCapture] Error getting all windows:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Find windows by process name
+   */
+  public async findWindowsByProcess(processName: string): Promise<DanmuCaptureWindow[]> {
+    try {
+      const enumerator = WindowsWindowEnumerator.getInstance();
+      const windows = await enumerator.findWindowsByProcess(processName);
+
+      return windows.map((w) => ({
+        id: w.hwnd,
+        title: w.title,
+        processName: w.processName,
+        position: w.rect,
+        selected: this.selectedWindow?.id === w.hwnd,
+        isChildWindow: w.level > 0,
+        parentHwnd: w.parentHwnd,
+      }));
+    } catch (error) {
+      console.error('[DanmuCapture] Error finding windows by process:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Find windows by title
+   */
+  public async findWindowsByTitle(titlePattern: string): Promise<DanmuCaptureWindow[]> {
+    try {
+      const enumerator = WindowsWindowEnumerator.getInstance();
+      const windows = await enumerator.findWindowsByTitle(titlePattern);
+
+      return windows.map((w) => ({
+        id: w.hwnd,
+        title: w.title,
+        processName: w.processName,
+        position: w.rect,
+        selected: this.selectedWindow?.id === w.hwnd,
+        isChildWindow: w.level > 0,
+        parentHwnd: w.parentHwnd,
+      }));
+    } catch (error) {
+      console.error('[DanmuCapture] Error finding windows by title:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Find 互动消息区 window specifically
+   */
+  public async findHudongWindow(): Promise<DanmuCaptureWindow | null> {
+    try {
+      const enumerator = WindowsWindowEnumerator.getInstance();
+      const window = await enumerator.findHudongWindow();
+
+      if (!window) return null;
+
+      return {
+        id: window.hwnd,
+        title: window.title,
+        processName: window.processName,
+        position: window.rect,
+        selected: this.selectedWindow?.id === window.hwnd,
+        isChildWindow: window.level > 0,
+        parentHwnd: window.parentHwnd,
+      };
+    } catch (error) {
+      console.error('[DanmuCapture] Error finding hudong window:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Capture a screen region using OCR
+   */
+  public async captureRegion(region: { x: number; y: number; width: number; height: number }): Promise<Danmu[]> {
+    const totalStartTime = Date.now();
+    try {
+      console.log(`[DanmuCapture] Capture started at ${new Date().toLocaleTimeString()}`);
+      const enumerator = WindowsWindowEnumerator.getInstance();
+      const captureStart = Date.now();
+      const screenshotBuffer = await enumerator.captureRegion(region);
+      const captureElapsed = Date.now() - captureStart;
+      console.log(`[DanmuCapture] Screenshot captured in ${captureElapsed}ms, size: ${screenshotBuffer?.length || 0}`);
+
+      if (!screenshotBuffer) {
+        console.log('[DanmuCapture] Failed to capture region');
+        return [];
+      }
+
+      // Save screenshot to debug directory for verification
+      const debugDir = path.join(os.homedir(), 'Documents', 'wordshot_debug');
+      const timestamp = Date.now();
+      const debugPath = path.join(debugDir, `capture_${timestamp}.png`);
+      try {
+        const fs = require('fs');
+        if (!fs.existsSync(debugDir)) {
+          fs.mkdirSync(debugDir, { recursive: true });
+        }
+        fs.writeFileSync(debugPath, screenshotBuffer);
+        console.log('[DanmuCapture] Screenshot saved to:', debugPath);
+      } catch (e) {
+        console.log('[DanmuCapture] Failed to save screenshot:', e);
+      }
+
+      // Prepare cloud provider if using cloud OCR
+      let cloudProvider: { baseURL: string; apiKey?: string; model: string; timeout: number } | undefined;
+      if (this.config.ocrEngine === 'cloud') {
+        // Get provider via IPC (which queries localStorage in renderer)
+        const ipcResult = await this.mainWindow?.webContents.executeJavaScript(`
+          (function() {
+            const item = localStorage.getItem('wordshot_config_ai_providers.json');
+            if (item) {
+              try {
+                const config = JSON.parse(item);
+                const enabled = config.providers && config.providers.find(function(p) { return p.enabled; });
+                if (enabled) {
+                  return {
+                    baseURL: enabled.baseURL,
+                    apiKey: enabled.apiKey || undefined,
+                    model: enabled.model,
+                    timeout: enabled.timeout || 120000
+                  };
+                }
+              } catch (e) {}
+            }
+            return null;
+          })()
+        `);
+        cloudProvider = ipcResult ?? undefined;
+        if (cloudProvider) {
+          console.log('[DanmuCapture] Using cloud OCR with provider:', cloudProvider.baseURL);
+        } else {
+          console.log('[DanmuCapture] Cloud OCR selected but no AI provider configured');
+        }
+      }
+
+      // Try OCR on the captured screenshot
+      let result;
+      const ocrStartTime = Date.now();
+      try {
+        result = await recognizeText(screenshotBuffer, cloudProvider);
+        const ocrElapsed = Date.now() - ocrStartTime;
+        console.log(`[DanmuCapture] OCR completed in ${ocrElapsed}ms`);
+        console.log(`[DanmuCapture] OCR result: ${JSON.stringify(result.text)}`);
+      } catch (ocrError) {
+        const ocrElapsed = Date.now() - ocrStartTime;
+        console.log(`[DanmuCapture] OCR failed after ${ocrElapsed}ms:`, ocrError);
+        return [];
+      }
+
+      // Parse danmu from OCR text
+      const rawDanmu = parseOCRDanmu(result.text);
+
+      const danmuList: Danmu[] = [];
+      for (const raw of rawDanmu) {
+        console.log(`[DanmuCapture] Raw danmu: username="${raw.username}" content="${raw.content}"`);
+        if (!isValidDanmuText(raw.content)) {
+          console.log(`[DanmuCapture] Filtered out by isValidDanmuText: "${raw.content}"`);
+          continue;
+        }
+
+        const type = classifyDanmuType(raw.content, raw.username);
+        const danmu = this.createDanmu(raw.username, raw.content, type);
+        danmuList.push(danmu);
+      }
+
+      if (danmuList.length > 0) {
+        const deduplicated = this.deduplicateDanmu(danmuList);
+        const totalElapsed = Date.now() - totalStartTime;
+        console.log(`[DanmuCapture] Total capture cycle completed in ${totalElapsed}ms, danmu count: ${deduplicated.length}`);
+        return deduplicated;
+      }
+
+      console.log('[DanmuCapture] No valid danmu found');
+      return [];
+    } catch (error) {
+      const totalElapsed = Date.now() - totalStartTime;
+      console.error(`[DanmuCapture] Region capture error after ${totalElapsed}ms:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Store the selected capture region
+   */
+  private captureRegionRect: { x: number; y: number; width: number; height: number } | null = null;
+
+  /**
+   * Set the capture region
+   */
+  public setCaptureRegion(region: { x: number; y: number; width: number; height: number }): void {
+    this.captureRegionRect = region;
+    console.log('[DanmuCapture] Capture region set:', region);
+  }
+
+  /**
+   * Get the current capture region
+   */
+  public getCaptureRegion(): { x: number; y: number; width: number; height: number } | null {
+    return this.captureRegionRect;
+  }
+
+  /**
    * Select a window for capture
    */
   public async selectWindow(windowId: string): Promise<DanmuCaptureWindow | null> {
-    const windows = await this.getAvailableWindows();
-    const window = windows.find((w) => w.id === windowId);
+    // Try desktopCapturer windows first
+    let windows = await this.getAvailableWindows();
+    let window = windows.find((w) => w.id === windowId);
+
+    // If not found, try all windows from Windows API
+    if (!window) {
+      windows = await this.getAllWindowsIncludingChildren();
+      window = windows.find((w) => w.id === windowId);
+    }
 
     if (window) {
       this.selectedWindow = window;
       this.config.windowTitle = window.title;
       this.saveConfig();
-      console.log(`[DanmuCapture] Window selected: ${window.title}`);
+      console.log(`[DanmuCapture] Window selected: ${window.title} (isChild: ${window.isChildWindow})`);
     }
 
     return window || null;
@@ -362,6 +716,16 @@ class DanmuCaptureService {
    */
   private async performCapture(): Promise<void> {
     try {
+      // Check if we have a capture region set
+      if (this.captureRegionRect) {
+        await this.captureRegion(this.captureRegionRect).then((danmuList) => {
+          if (danmuList.length > 0) {
+            this.sendDanmuBatch(danmuList);
+          }
+        });
+        return;
+      }
+
       if (this.config.useOCR) {
         // OCR-based capture
         await this.captureWithOCR();
@@ -372,7 +736,7 @@ class DanmuCaptureService {
       }
     } catch (error) {
       console.error('[DanmuCapture] Capture error:', error);
-      this.sendError(`Capture failed: ${error}`);
+      // Don't send error to UI - just log it and continue
     }
   }
 
@@ -405,7 +769,44 @@ class DanmuCaptureService {
    */
   private async captureWithOCR(): Promise<void> {
     try {
-      // Get window thumbnail using desktopCapturer
+      // Check if selected window is a child window from Windows API
+      const isChildWindow = this.selectedWindow?.isChildWindow;
+      const selectedHwnd = this.selectedWindow?.id;
+
+      // Get cloud provider if using cloud OCR
+      let cloudProvider: { baseURL: string; apiKey?: string; model: string; timeout: number } | undefined;
+      if (this.config.ocrEngine === 'cloud') {
+        // Get provider via IPC (which queries localStorage in renderer)
+        const ipcResult = await this.mainWindow?.webContents.executeJavaScript(`
+          (function() {
+            const item = localStorage.getItem('wordshot_config_ai_providers.json');
+            if (item) {
+              try {
+                const config = JSON.parse(item);
+                const enabled = config.providers && config.providers.find(function(p) { return p.enabled; });
+                if (enabled) {
+                  return {
+                    baseURL: enabled.baseURL,
+                    apiKey: enabled.apiKey || undefined,
+                    model: enabled.model,
+                    timeout: enabled.timeout || 120000
+                  };
+                }
+              } catch (e) {}
+            }
+            return null;
+          })()
+        `);
+        cloudProvider = ipcResult ?? undefined;
+      }
+
+      if (isChildWindow && selectedHwnd) {
+        // Use Windows API to capture child window directly
+        await this.captureChildWindowWithOCR(selectedHwnd, cloudProvider);
+        return;
+      }
+
+      // Fallback to desktopCapturer for top-level windows
       const sources = await desktopCapturer.getSources({
         types: ['window'],
         thumbnailSize: { width: 1920, height: 1080 },
@@ -426,7 +827,7 @@ class DanmuCaptureService {
       const thumbnail = targetSource.thumbnail.toPNG();
 
       // Perform OCR
-      const result = await recognizeText(thumbnail);
+      const result = await recognizeText(thumbnail, cloudProvider);
       console.log(`[DanmuCapture] OCR result: ${result.text.slice(0, 100)}...`);
 
       // Parse danmu from OCR text
@@ -449,7 +850,48 @@ class DanmuCaptureService {
       }
     } catch (error) {
       console.error('[DanmuCapture] OCR capture error:', error);
-      this.sendError(`OCR capture failed: ${error}`);
+      // Don't send error to UI as this is expected if OCR fails
+    }
+  }
+
+  /**
+   * Capture a child window using Windows API and perform OCR
+   */
+  private async captureChildWindowWithOCR(hwnd: string, cloudProvider?: { baseURL: string; apiKey?: string; model: string; timeout: number }): Promise<void> {
+    try {
+      const enumerator = WindowsWindowEnumerator.getInstance();
+      const screenshotBuffer = await enumerator.captureWindow(hwnd);
+
+      if (!screenshotBuffer) {
+        console.log('[DanmuCapture] Failed to capture child window');
+        return;
+      }
+
+      // Perform OCR on the captured screenshot
+      const result = await recognizeText(screenshotBuffer, cloudProvider);
+      console.log(`[DanmuCapture] OCR result from child window: ${result.text.slice(0, 100)}...`);
+
+      // Parse danmu from OCR text
+      const rawDanmu = parseOCRDanmu(result.text);
+
+      const danmuList: Danmu[] = [];
+      for (const raw of rawDanmu) {
+        if (!isValidDanmuText(raw.content)) continue;
+
+        const type = classifyDanmuType(raw.content, raw.username);
+        const danmu = this.createDanmu(raw.username, raw.content, type);
+        danmuList.push(danmu);
+      }
+
+      if (danmuList.length > 0) {
+        const deduplicated = this.deduplicateDanmu(danmuList);
+        if (deduplicated.length > 0) {
+          this.sendDanmuBatch(deduplicated);
+        }
+      }
+    } catch (error) {
+      console.error('[DanmuCapture] Child window OCR capture error:', error);
+      // Don't send error to UI as this is expected if OCR fails
     }
   }
 

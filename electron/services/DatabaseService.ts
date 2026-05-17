@@ -50,6 +50,7 @@ export function initDatabase(): Database.Database {
       totalDurationMinutes INTEGER NOT NULL DEFAULT 60,
       patterns TEXT NOT NULL DEFAULT '[]',
       repeatCount INTEGER NOT NULL DEFAULT 1,
+      freeContent TEXT NOT NULL DEFAULT '',
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL
     );
@@ -62,7 +63,8 @@ export function initDatabase(): Database.Database {
       durationSeconds INTEGER NOT NULL DEFAULT 300,
       "order" INTEGER NOT NULL DEFAULT 0,
       transition TEXT,
-      scriptIds TEXT NOT NULL DEFAULT '[]'
+      scriptIds TEXT NOT NULL DEFAULT '[]',
+      customContent TEXT NOT NULL DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
@@ -110,6 +112,17 @@ export function initDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_usage_history_sessionId ON usage_history(sessionId);
     CREATE INDEX IF NOT EXISTS idx_pending_scripts_status ON pending_scripts(status);
   `);
+
+  // Migrate legacy tables: add freeContent/customContent columns if missing
+  const templateCols = db.prepare("PRAGMA table_info(templates)").all() as any[];
+  if (!templateCols.find((c: any) => c.name === 'freeContent')) {
+    db.exec('ALTER TABLE templates ADD COLUMN freeContent TEXT NOT NULL DEFAULT \'\'');
+  }
+
+  const segmentCols = db.prepare("PRAGMA table_info(segments)").all() as any[];
+  if (!segmentCols.find((c: any) => c.name === 'customContent')) {
+    db.exec('ALTER TABLE segments ADD COLUMN customContent TEXT NOT NULL DEFAULT \'\'');
+  }
 
   return db;
 }
@@ -224,9 +237,11 @@ export function getAllTemplates() {
     const segments = database.prepare('SELECT * FROM segments WHERE templateId = ? ORDER BY "order" ASC').all(row.id);
     return {
       ...row,
+      freeContent: row.freeContent || '',
       segments: segments.map((s: any) => ({
         ...s,
         scriptIds: s.scriptIds ? JSON.parse(s.scriptIds) : [],
+        customContent: s.customContent || '',
       })),
     };
   });
@@ -234,14 +249,16 @@ export function getAllTemplates() {
 
 export function getTemplateById(id: string) {
   const database = getDatabase();
-  const row = database.prepare('SELECT * FROM templates WHERE id = ?').get(id);
+  const row: any = database.prepare('SELECT * FROM templates WHERE id = ?').get(id);
   if (!row) return undefined;
   const segments = database.prepare('SELECT * FROM segments WHERE templateId = ? ORDER BY "order" ASC').all(id);
   return {
     ...row,
+    freeContent: row.freeContent || '',
     segments: segments.map((s: any) => ({
       ...s,
       scriptIds: s.scriptIds ? JSON.parse(s.scriptIds) : [],
+      customContent: s.customContent || '',
     })),
   };
 }
@@ -249,8 +266,8 @@ export function getTemplateById(id: string) {
 export function createTemplate(template: any) {
   const database = getDatabase();
   database.prepare(`
-    INSERT INTO templates (id, theme, name, totalDurationMinutes, patterns, repeatCount, createdAt, updatedAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO templates (id, theme, name, totalDurationMinutes, patterns, repeatCount, freeContent, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     template.id,
     template.theme,
@@ -258,6 +275,7 @@ export function createTemplate(template: any) {
     template.totalDurationMinutes || 60,
     JSON.stringify(template.patterns || []),
     template.repeatCount || 1,
+    template.freeContent || '',
     template.createdAt || Date.now(),
     template.updatedAt || Date.now()
   );
@@ -271,7 +289,7 @@ export function updateTemplate(id: string, updates: any) {
 
   const updated = { ...existing, ...updates };
   database.prepare(`
-    UPDATE templates SET theme = ?, name = ?, totalDurationMinutes = ?, patterns = ?, repeatCount = ?, updatedAt = ?
+    UPDATE templates SET theme = ?, name = ?, totalDurationMinutes = ?, patterns = ?, repeatCount = ?, freeContent = ?, updatedAt = ?
     WHERE id = ?
   `).run(
     updated.theme,
@@ -279,6 +297,7 @@ export function updateTemplate(id: string, updates: any) {
     updated.totalDurationMinutes,
     JSON.stringify(updated.patterns || []),
     updated.repeatCount || 1,
+    updated.freeContent || '',
     Date.now(),
     id
   );
@@ -305,8 +324,8 @@ export function getSegmentsByTemplate(templateId: string) {
 export function createSegment(segment: any) {
   const database = getDatabase();
   database.prepare(`
-    INSERT INTO segments (id, templateId, name, category, durationSeconds, "order", transition, scriptIds)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO segments (id, templateId, name, category, durationSeconds, "order", transition, scriptIds, customContent)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     segment.id,
     segment.templateId,
@@ -315,7 +334,8 @@ export function createSegment(segment: any) {
     segment.durationSeconds || 300,
     segment.order || 0,
     segment.transition || null,
-    JSON.stringify(segment.scriptIds || [])
+    JSON.stringify(segment.scriptIds || []),
+    segment.customContent || ''
   );
   return segment;
 }
@@ -327,7 +347,7 @@ export function updateSegment(id: string, updates: any) {
 
   const updated = { ...existing, ...updates };
   database.prepare(`
-    UPDATE segments SET name = ?, category = ?, durationSeconds = ?, "order" = ?, transition = ?, scriptIds = ?
+    UPDATE segments SET name = ?, category = ?, durationSeconds = ?, "order" = ?, transition = ?, scriptIds = ?, customContent = ?
     WHERE id = ?
   `).run(
     updated.name,
@@ -336,6 +356,7 @@ export function updateSegment(id: string, updates: any) {
     updated.order,
     updated.transition || null,
     JSON.stringify(updated.scriptIds || []),
+    updated.customContent || '',
     id
   );
   return updated;

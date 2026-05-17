@@ -73,6 +73,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 弹幕抓取 - 窗口列表
   getDanmuWindows: () => ipcRenderer.invoke('danmu:get-windows'),
 
+  // 弹幕抓取 - 获取所有窗口（包括子窗口）
+  getAllDanmuWindows: () => ipcRenderer.invoke('danmu:get-all-windows'),
+
+  // 弹幕抓取 - 根据进程名查找窗口
+  findDanmuWindowsByProcess: (processName: string) => ipcRenderer.invoke('danmu:find-windows-by-process', processName),
+
+  // 弹幕抓取 - 根据标题查找窗口
+  findDanmuWindowsByTitle: (titlePattern: string) => ipcRenderer.invoke('danmu:find-windows-by-title', titlePattern),
+
+  // 弹幕抓取 - 查找互动消息区窗口
+  findHudongWindow: () => ipcRenderer.invoke('danmu:find-hudong-window'),
+
+  // 弹幕抓取 - 设置/获取捕获区域
+  setDanmuCaptureRegion: (region: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('danmu:set-capture-region', region),
+  getDanmuCaptureRegion: () => ipcRenderer.invoke('danmu:get-capture-region'),
+  captureDanmuRegion: (region: { x: number; y: number; width: number; height: number }) => ipcRenderer.invoke('danmu:capture-region', region),
+
   // 弹幕抓取 - 选择窗口
   selectDanmuWindow: (windowId: string) => ipcRenderer.invoke('danmu:select-window', windowId),
 
@@ -93,6 +110,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 弹幕抓取 - 恢复
   resumeDanmuCapture: () => ipcRenderer.invoke('danmu:capture-resume'),
+
+  // 弹幕抓取 - 查询当前状态
+  getDanmuCaptureStatus: () => ipcRenderer.invoke('danmu:get-capture-status'),
 
   // 弹幕抓取 - 监听新弹幕
   onDanmuNew: (callback: (danmu: any) => void) => {
@@ -130,6 +150,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Clear all scripts from database
   clearAllScripts: () => {
     return ipcRenderer.invoke('db:clearAllScripts')
+  },
+
+  // Get AI providers (avoids localStorage in main process)
+  getAIProviders: () => {
+    return ipcRenderer.invoke('ai:getProviders')
+  },
+
+  // Get enabled AI provider for OCR directly
+  getOcrProvider: () => {
+    return ipcRenderer.invoke('ai:getOcrProvider')
   },
 
   // AI Chat Completion（主进程网络请求，避免CORS）

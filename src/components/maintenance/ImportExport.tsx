@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useScriptStore } from '../../stores/scriptStore';
 import * as scriptService from '../../services/scriptService';
+import { syncIdFromDatabase } from '../../services/IdGenerator';
 import {
   parseTextFormat,
   parseMarkdown,
@@ -215,8 +216,11 @@ export default function ImportExport() {
   }, []);
 
   // Handle confirm import
-  const handleConfirmImport = useCallback(() => {
+  const handleConfirmImport = useCallback(async () => {
     if (!parseResult || selectedParsedIndices.size === 0) return;
+
+    // Sync ID counter with database before import to avoid ID conflicts
+    await syncIdFromDatabase();
 
     const selectedScripts = parseResult.scripts.filter((_, i) => selectedParsedIndices.has(i));
     const scriptsToAdd = convertToScripts(selectedScripts);

@@ -134,6 +134,7 @@ export interface MainScriptTemplate {
   segments: ScriptSegment[];
   patterns: SegmentPattern[];  // 节奏模式配置
   repeatCount: number;          // 循环次数
+  freeContent?: string;          // 自由输入内容（不依赖话术库，整段文本）
   createdAt: number;
   updatedAt: number;
 }
@@ -146,7 +147,8 @@ export interface ScriptSegment {
   durationSeconds: number;
   order: number;
   transition?: string;
-  scriptIds?: string[];          // 关联的话术ID列表
+  scriptIds?: string[];
+  customContent?: string;          // 自定义文本内容（多行，\n 分隔）
 }
 
 export interface MainScript {
@@ -182,6 +184,16 @@ export interface DanmuCaptureWindow {
   processName: string;
   position?: { x: number; y: number; width: number; height: number };
   selected: boolean;
+  isChildWindow?: boolean;
+  parentHwnd?: string | null;
+}
+
+export interface DanmuCaptureRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  name?: string;
 }
 
 // AI types
@@ -195,6 +207,61 @@ export interface AIReplyItem {
   order: number;
   content: string;
   confidence: number;
+}
+
+// ============ PERSONA SYSTEM ============
+
+export interface PersonaConfig {
+  id: string;
+  name: string;
+  description: string;
+  personalityTraits: string[];
+  speakingStyle: PersonaSpeakingStyle;
+  replyTone: PersonaReplyTone;
+  responseLength: 'short' | 'medium' | 'long';
+  customGuidelines: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type PersonaSpeakingStyle =
+  | 'casual'
+  | 'energetic'
+  | 'warm'
+  | 'humorous'
+  | 'sarcastic'
+  | 'professional'
+  | 'playful'
+  | 'cool'
+  | 'rebellious';
+
+export type PersonaReplyTone =
+  | 'friendly'
+  | 'teasing'
+  | 'serious'
+  | 'humorous'
+  | 'stylish'
+  | 'caring';
+
+// ============ DANMU REPLY SERVICE TYPES ============
+
+export interface DanmuReplyRequest {
+  danmu: Danmu;
+  persona?: PersonaConfig;
+  maxReplies?: number;
+}
+
+export interface DanmuReplyResult {
+  reply: AIReplyItem;
+  matchType: 'trigger' | 'content' | 'llm';
+  matchedScriptId?: string;
+}
+
+export interface DanmuReplyResponse {
+  danmu: Danmu;
+  replies: DanmuReplyResult[];
+  generatedAt: number;
+  personaUsed?: string;
 }
 
 export interface AIProviderConfig {
@@ -261,6 +328,13 @@ export interface ElectronAPI {
 
   // Danmu capture
   getDanmuWindows: () => Promise<DanmuCaptureWindow[]>;
+  getAllDanmuWindows: () => Promise<DanmuCaptureWindow[]>;
+  findDanmuWindowsByProcess: (processName: string) => Promise<DanmuCaptureWindow[]>;
+  findDanmuWindowsByTitle: (titlePattern: string) => Promise<DanmuCaptureWindow[]>;
+  findHudongWindow: () => Promise<DanmuCaptureWindow | null>;
+  setDanmuCaptureRegion: (region: { x: number; y: number; width: number; height: number }) => Promise<boolean>;
+  getDanmuCaptureRegion: () => Promise<{ x: number; y: number; width: number; height: number } | null>;
+  captureDanmuRegion: (region: { x: number; y: number; width: number; height: number }) => Promise<Danmu[]>;
   selectDanmuWindow: (windowId: string) => Promise<DanmuCaptureWindow | null>;
   getDanmuConfig: () => Promise<DanmuCaptureConfig>;
   updateDanmuConfig: (config: Partial<DanmuCaptureConfig>) => Promise<DanmuCaptureConfig>;
@@ -268,6 +342,7 @@ export interface ElectronAPI {
   stopDanmuCapture: () => Promise<boolean>;
   pauseDanmuCapture: () => Promise<boolean>;
   resumeDanmuCapture: () => Promise<boolean>;
+  getDanmuCaptureStatus: () => Promise<{ isCapturing: boolean; isPaused: boolean; status: 'capturing' | 'paused' | 'stopped' }>;
   onDanmuNew: (callback: (danmu: Danmu) => void) => void;
   onDanmuBatch: (callback: (danmuList: Danmu[]) => void) => void;
   onDanmuError: (callback: (error: string) => void) => void;

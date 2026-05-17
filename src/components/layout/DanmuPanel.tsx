@@ -2,7 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { danmuStore } from '../../stores/danmuStore';
 import { scriptStore } from '../../stores/scriptStore';
 import { themeStore } from '../../stores/themeStore';
-import type { Danmu, DanmuType, Script, AIRecommendationResult, AIReplyItem } from '../../types';
+import { getDanmuReplyService } from '../../services/DanmuReplyService';
+import { getPersonaService } from '../../services/PersonaService';
+import type { Danmu, DanmuType, Script, AIReplyItem, DanmuReplyResponse } from '../../types';
 
 export interface DanmuPanelProps {
   className?: string;
@@ -10,25 +12,64 @@ export interface DanmuPanelProps {
 
 // Danmu type to color mapping
 const DANMU_TYPE_COLORS: Record<DanmuType, string> = {
-  normal: 'var(--danmu-normal, #888888)',
-  gift: 'var(--danmu-gift, #ff4444)',
-  big_gift: 'var(--danmu-big-gift, #ff0000)',
-  follower: 'var(--danmu-follower, #00bcd4)',
-  question: 'var(--danmu-question, #2196f3)',
-  hater: 'var(--danmu-hater, #ff9800)',
-  ribbit: 'var(--danmu-ribbit, #9c27b0)',
-  provocative: 'var(--danmu-provocative, #ff5722)',
-  vip: 'var(--danmu-vip, #ffd700)',
-  pk: 'var(--danmu-pk, #e91e63)',
-  praise: 'var(--danmu-praise, #4caf50)',
+  normal: '#888888',
+  gift: '#ff4444',
+  big_gift: '#ff0000',
+  follower: '#00bcd4',
+  question: '#2196f3',
+  hater: '#ff9800',
+  ribbit: '#9c27b0',
+  provocative: '#ff5722',
+  vip: '#ffd700',
+  pk: '#e91e63',
+  praise: '#4caf50',
 };
 
 // Importance to highlight style mapping
 const IMPORTANCE_STYLES = {
   normal: '',
-  highlight: 'var(--danmu-highlight-bg, rgba(33, 150, 243, 0.2))',
-  danger: 'var(--danmu-danger-bg, rgba(244, 67, 53, 0.2))',
+  highlight: 'rgba(33, 150, 243, 0.15)',
+  danger: 'rgba(244, 67, 53, 0.15)',
 };
+
+const DANMU_STORAGE_KEY = 'wordshot-danmu-state';
+
+interface DanmuPanelState {
+  isScrolling: boolean;
+  scrollSpeed: number;
+}
+
+const DEFAULT_DANMU_STATE: DanmuPanelState = {
+  isScrolling: true,
+  scrollSpeed: 1,
+};
+
+function loadDanmuState(): DanmuPanelState {
+  try {
+    const saved = localStorage.getItem(DANMU_STORAGE_KEY);
+    if (saved) {
+      return { ...DEFAULT_DANMU_STATE, ...JSON.parse(saved) };
+    }
+  } catch (e) {
+    console.error('[DanmuPanel] Failed to load state:', e);
+  }
+  return DEFAULT_DANMU_STATE;
+}
+
+function saveDanmuState(state: DanmuPanelState): void {
+  try {
+    localStorage.setItem(DANMU_STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.error('[DanmuPanel] Failed to save state:', e);
+  }
+}
+
+// Merge danmu with its recommendations for display
+interface DanmuWithReply {
+  danmu: Danmu;
+  reply: AIReplyItem | null;
+  matchType: 'trigger' | 'content' | 'llm' | null;
+}
 
 export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
   const danmuList = danmuStore((state) => state.danmuList);
@@ -40,10 +81,23 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
   const addScript = scriptStore((state) => state.addScript);
   const activeTheme = themeStore((state) => state.getActiveTheme());
 
-  const [recommendations, setRecommendations] = useState<AIRecommendationResult | null>(null);
+  // Store recommendations by danmu id
+  const recommendationsMapRef = useRef<Record<string, DanmuReplyResponse>>({});
+  const [recommendationsMap, setRecommendationsMap] = useState<Record<string, DanmuReplyResponse>>({});
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [opacity, setOpacity] = useState(1);
+  const [isScrolling, setIsScrolling] = useState(DEFAULT_DANMU_STATE.isScrolling);
+  const [scrollSpeed, setScrollSpeed] = useState(DEFAULT_DANMU_STATE.scrollSpeed);
   const listRef = useRef<HTMLDivElement>(null);
+  const processedIdsRef = useRef<Set<string>>(new Set());
+  const prevDanmuLengthRef = useRef(0);
+
+  // Load state from storage
+  useEffect(() => {
+    const state = loadDanmuState();
+    setIsScrolling(state.isScrolling);
+    setScrollSpeed(state.scrollSpeed);
+  }, []);
 
   // Sync opacity with transparency settings
   useEffect(() => {
@@ -62,90 +116,68 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
     return () => window.removeEventListener('transparency-changed', handleTransparencyChange);
   }, []);
 
-  // Auto-scroll to bottom when new danmu arrives
-  useEffect(() => {
-    if (listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight;
-    }
-  }, [danmuList]);
-
-  // Auto-highlight high-quality or risk danmu based on importance
+  // Auto-highlight newest danmu when new ones arrive
   useEffect(() => {
     if (danmuList.length === 0) return;
 
-    // Find the most important unprocessed danmu
-    const unprocessedDanmu = danmuList.find((d) => d.id !== highlightedDanmu?.id);
+    // Get the newest danmu (last in array)
+    const newestDanmu = danmuList[danmuList.length - 1];
+    if (!newestDanmu) return;
 
-    if (unprocessedDanmu) {
-      // Auto-highlight danger and highlight importance, or high sentiment
-      if (
-        unprocessedDanmu.importance === 'danger' ||
-        unprocessedDanmu.importance === 'highlight' ||
-        unprocessedDanmu.sentiment > 0.7 ||
-        unprocessedDanmu.sentiment < -0.3
-      ) {
-        setHighlightedDanmu(unprocessedDanmu);
-      }
-    }
+    // Skip if already highlighted
+    if (newestDanmu.id === highlightedDanmu?.id) return;
+
+    // Auto-highlight the newest danmu
+    setHighlightedDanmu(newestDanmu);
   }, [danmuList, highlightedDanmu, setHighlightedDanmu]);
 
-  // Generate mock AI recommendations when a danmu is highlighted
+  // Generate recommendations for ALL danmu when danmuList changes
   useEffect(() => {
-    if (!highlightedDanmu) {
-      setRecommendations(null);
-      return;
-    }
+    const generateForDanmu = async (danmu: Danmu) => {
+      if (recommendationsMapRef.current[danmu.id]) return; // Already have recommendation
 
-    // Simulate AI recommendation generation
-    // In production, this would call AIRecommendationEngine
-    const mockReplies: AIReplyItem[] = [
-      { order: 1, content: `谢谢 ${highlightedDanmu.username} 的关注~`, confidence: 0.95 },
-      { order: 2, content: `欢迎常来玩呀主播很努力的`, confidence: 0.88 },
-      { order: 3, content: `觉得主播不错的记得点个关注哦`, confidence: 0.82 },
-    ];
+      try {
+        const danmuReplyService = getDanmuReplyService();
+        const personaService = getPersonaService();
+        const activePersona = personaService.getActivePersona();
 
-    setRecommendations({
-      danmu: highlightedDanmu,
-      replies: mockReplies,
-      generatedAt: Date.now(),
+        const response = await danmuReplyService.generateReply(
+          { danmu, persona: activePersona },
+          { maxReplies: 1 }
+        );
+
+        recommendationsMapRef.current[danmu.id] = response;
+        setRecommendationsMap((prev) => ({
+          ...prev,
+          [danmu.id]: response,
+        }));
+      } catch (error) {
+        console.error('Failed to generate reply for danmu:', error);
+      }
+    };
+
+    // Generate recommendations for all danmu that don't have them yet
+    danmuList.forEach((danmu) => {
+      if (!recommendationsMapRef.current[danmu.id]) {
+        generateForDanmu(danmu);
+      }
     });
-  }, [highlightedDanmu]);
+  }, [danmuList]);
 
-  const handleSaveToScriptLibrary = useCallback(() => {
-    if (!recommendations) return;
+  const handleSaveReply = useCallback(
+    (danmuId: string) => {
+      const response = recommendationsMap[danmuId];
+      if (!response) return;
 
-    recommendations.replies.forEach((reply) => {
+      const topReply = response.replies[0];
+      if (!topReply) return;
+
       const newScript: Script = {
-        id: `pending-${Date.now()}-${reply.order}`,
+        id: `pending-${Date.now()}-${topReply.reply.order}`,
         category: 'interaction',
-        content: reply.content,
+        content: topReply.reply.content,
         color: activeTheme?.accentColor || '#e94560',
-        priority: Math.round(reply.confidence * 10),
-        triggers: [],
-        tags: ['ai-generated', 'danmu-reply'],
-        usageCount: 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-
-      // Add to pending scripts for review
-      scriptStore.setState((state) => ({
-        pendingScripts: [...state.pendingScripts, newScript],
-      }));
-    });
-
-    // Clear recommendations after saving
-    setRecommendations(null);
-  }, [recommendations, activeTheme]);
-
-  const handleSaveSingleReply = useCallback(
-    (reply: AIReplyItem) => {
-      const newScript: Script = {
-        id: `pending-${Date.now()}-${reply.order}`,
-        category: 'interaction',
-        content: reply.content,
-        color: activeTheme?.accentColor || '#e94560',
-        priority: Math.round(reply.confidence * 10),
+        priority: Math.round(topReply.reply.confidence * 10),
         triggers: [],
         tags: ['ai-generated', 'danmu-reply'],
         usageCount: 0,
@@ -157,23 +189,20 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
         pendingScripts: [...state.pendingScripts, newScript],
       }));
     },
-    [activeTheme]
+    [recommendationsMap, activeTheme]
   );
 
-  const handleTempFavorite = useCallback(
-    (danmu: Danmu) => {
-      setFavorites((prev) => {
-        const next = new Set(prev);
-        if (next.has(danmu.id)) {
-          next.delete(danmu.id);
-        } else {
-          next.add(danmu.id);
-        }
-        return next;
-      });
-    },
-    []
-  );
+  const handleTempFavorite = useCallback((danmu: Danmu) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(danmu.id)) {
+        next.delete(danmu.id);
+      } else {
+        next.add(danmu.id);
+      }
+      return next;
+    });
+  }, []);
 
   const handleQuickAddToLibrary = useCallback(
     (danmu: Danmu) => {
@@ -203,57 +232,104 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
     };
   };
 
+  // Reverse to show newest at top
   const displayDanmu = filteredDanmu.length > 0 ? filteredDanmu : danmuList;
+  const reversedDanmu = [...displayDanmu].reverse();
+
+  // Build danmu with reply list
+  const danmuWithReplies: DanmuWithReply[] = reversedDanmu.map((danmu) => {
+    const response = recommendationsMap[danmu.id];
+    const topReply = response?.replies[0];
+    return {
+      danmu,
+      reply: topReply?.reply || null,
+      matchType: topReply?.matchType || null,
+    };
+  });
 
   return (
     <div
       className={`danmu-panel ${className}`}
-      style={
-        {
-          '--danmu-normal': '#888888',
-          '--danmu-gift': '#ff4444',
-          '--danmu-big-gift': '#ff0000',
-          '--danmu-follower': '#00bcd4',
-          '--danmu-question': '#2196f3',
-          '--danmu-hater': '#ff9800',
-          '--danmu-ribbit': '#9c27b0',
-          '--danmu-provocative': '#ff5722',
-          '--danmu-vip': '#ffd700',
-          '--danmu-pk': '#e91e63',
-          '--danmu-praise': '#4caf50',
-          '--danmu-highlight-bg': 'rgba(33, 150, 243, 0.15)',
-          '--danmu-danger-bg': 'rgba(244, 67, 53, 0.15)',
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          backgroundColor: 'transparent',
-          overflow: 'hidden',
-          opacity,
-        } as React.CSSProperties
-      }
+      style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        backgroundColor: 'transparent',
+        overflow: 'hidden',
+        opacity,
+      }}
     >
-      {/* Header - hidden since panel already has title */}
+      {/* Controls */}
       <div
         style={{
-          display: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '4px 8px',
+          flexShrink: 0,
+          borderBottom: '1px solid rgba(255,255,255,0.05)',
         }}
-      />
+      >
+        <button
+          onClick={() => {
+            setIsScrolling(!isScrolling);
+            saveDanmuState({ isScrolling: !isScrolling, scrollSpeed });
+          }}
+          style={{
+            padding: '4px 12px',
+            fontSize: '11px',
+            border: 'none',
+            borderRadius: '4px',
+            backgroundColor: isScrolling ? 'rgba(76, 175, 80, 0.3)' : 'rgba(255,255,255,0.1)',
+            color: isScrolling ? '#4caf50' : 'rgba(255,255,255,0.7)',
+            cursor: 'pointer',
+          }}
+        >
+          {isScrolling ? '⏸ 滚动中' : '▶ 开始滚动'}
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)' }}>速度:</span>
+          {[0.5, 1, 1.5, 2].map((speed) => (
+            <button
+              key={speed}
+              onClick={() => {
+                setScrollSpeed(speed);
+                saveDanmuState({ isScrolling, scrollSpeed: speed });
+              }}
+              style={{
+                padding: '2px 6px',
+                fontSize: '10px',
+                border: 'none',
+                borderRadius: '3px',
+                backgroundColor: scrollSpeed === speed ? 'rgba(233, 69, 96, 0.3)' : 'transparent',
+                color: scrollSpeed === speed ? '#e94560' : 'rgba(255,255,255,0.5)',
+                cursor: 'pointer',
+              }}
+            >
+              {speed}x
+            </button>
+          ))}
+        </div>
+      </div>
 
-      {/* Danmu List */}
+      {/* Danmu List - no visible scrollbar, push-up effect */}
       <div
         ref={listRef}
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '4px',
+          padding: '8px',
           scrollBehavior: 'smooth',
         }}
+        className="danmu-list-container"
       >
-        {displayDanmu.map((danmu) => (
+        {danmuWithReplies.map(({ danmu, reply, matchType }) => (
           <DanmuItem
             key={danmu.id}
             danmu={danmu}
+            reply={reply}
+            matchType={matchType}
             isHighlighted={highlightedDanmu?.id === danmu.id}
             isFavorite={favorites.has(danmu.id)}
             isSelected={danmu.selectedForReply}
@@ -262,6 +338,7 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
             onToggleFavorite={() => handleTempFavorite(danmu)}
             onQuickAdd={() => handleQuickAddToLibrary(danmu)}
             onToggleSelect={() => toggleSelectedForReply(danmu.id)}
+            onSaveReply={() => handleSaveReply(danmu.id)}
           />
         ))}
         {displayDanmu.length === 0 && (
@@ -270,7 +347,7 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
               textAlign: 'center',
               padding: '24px',
               color: 'rgba(255,255,255,0.4)',
-              fontSize: '13px',
+              fontSize: '14px',
             }}
           >
             暂无弹幕
@@ -278,89 +355,24 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
         )}
       </div>
 
-      {/* AI Recommendation Panel */}
-      {recommendations && (
-        <div
-          style={{
-            borderTop: '1px solid rgba(255,255,255,0.08)',
-            padding: '8px',
-            backgroundColor: 'rgba(0,0,0,0.2)',
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ marginBottom: '6px', fontSize: '12px' }}>
-            <span style={{ color: 'var(--theme-text, #ffffff)' }}>
-              推荐答复
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {recommendations.replies.map((reply) => (
-              <div
-                key={reply.order}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  fontSize: '12px',
-                }}
-              >
-                <span style={{ color: 'rgba(255,255,255,0.4)', minWidth: '14px' }}>
-                  {reply.order}.
-                </span>
-                <span style={{ color: 'var(--theme-text, #ffffff)', flex: 1 }}>
-                  {reply.content}
-                </span>
-                <button
-                  onClick={() => handleSaveSingleReply(reply)}
-                  style={{
-                    padding: '1px 5px',
-                    fontSize: '10px',
-                    border: 'none',
-                    borderRadius: '3px',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: 'rgba(255,255,255,0.7)',
-                    cursor: 'pointer',
-                  }}
-                  title="存入话术库"
-                >
-                  +
-                </button>
-              </div>
-            ))}
-          </div>
-          <div
-            style={{
-              marginTop: '8px',
-              display: 'flex',
-              gap: '6px',
-            }}
-          >
-            <button
-              onClick={handleSaveToScriptLibrary}
-              style={{
-                flex: 1,
-                padding: '6px 10px',
-                fontSize: '11px',
-                border: 'none',
-                borderRadius: '4px',
-                backgroundColor: 'var(--theme-accent, #e94560)',
-                color: '#ffffff',
-                cursor: 'pointer',
-                fontWeight: 500,
-              }}
-            >
-              一键存入话术库
-            </button>
-          </div>
-        </div>
-      )}
+      <style>{`
+        .danmu-list-container::-webkit-scrollbar {
+          display: none;
+        }
+        .danmu-list-container {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
     </div>
   );
 }
 
-// Danmu Item Component
+// Danmu Item Component with inline reply
 interface DanmuItemProps {
   danmu: Danmu;
+  reply: AIReplyItem | null;
+  matchType: 'trigger' | 'content' | 'llm' | null;
   isHighlighted: boolean;
   isFavorite: boolean;
   isSelected: boolean;
@@ -369,10 +381,13 @@ interface DanmuItemProps {
   onToggleFavorite: () => void;
   onQuickAdd: () => void;
   onToggleSelect: () => void;
+  onSaveReply: () => void;
 }
 
 function DanmuItem({
   danmu,
+  reply,
+  matchType,
   isHighlighted,
   isFavorite,
   isSelected,
@@ -381,8 +396,11 @@ function DanmuItem({
   onToggleFavorite,
   onQuickAdd,
   onToggleSelect,
+  onSaveReply,
 }: DanmuItemProps) {
   const [showActions, setShowActions] = useState(false);
+
+  const typeLabel = matchType === 'trigger' ? '触发' : matchType === 'content' ? '内容' : matchType === 'llm' ? 'AI' : null;
 
   return (
     <div
@@ -391,69 +409,117 @@ function DanmuItem({
       onClick={onHighlight}
       style={{
         ...style,
-        padding: '6px 8px',
-        marginBottom: '4px',
-        borderRadius: '5px',
+        padding: '10px 12px',
+        marginBottom: '6px',
+        borderRadius: '6px',
         cursor: 'pointer',
         transition: 'all 0.15s ease',
-        opacity: isHighlighted ? 1 : 0.85,
+        opacity: isHighlighted ? 1 : 0.9,
         transform: isHighlighted ? 'scale(1.01)' : 'scale(1)',
         border: isSelected ? '1px solid rgba(233, 69, 96, 0.5)' : '1px solid transparent',
         position: 'relative',
       }}
     >
-      {/* Username */}
+      {/* Main content - single line: 用户名：弹幕内容 */}
       <div
         style={{
-          fontSize: '11px',
-          fontWeight: 600,
-          marginBottom: '3px',
+          fontSize: '14px',
+          lineHeight: 1.4,
+          color: 'inherit',
           display: 'flex',
-          alignItems: 'center',
-          gap: '5px',
+          alignItems: 'flex-start',
+          gap: '6px',
         }}
       >
-        <span>{danmu.username}</span>
-        {danmu.type === 'vip' && (
-          <span
-            style={{
-              fontSize: '10px',
-              padding: '1px 4px',
-              borderRadius: '2px',
-              backgroundColor: '#ffd700',
-              color: '#000',
-              fontWeight: 700,
-            }}
-          >
-            VIP
-          </span>
-        )}
-        {danmu.type === 'big_gift' && (
-          <span style={{ fontSize: '10px' }}>🎁</span>
-        )}
-        {isFavorite && <span style={{ fontSize: '10px' }}>⭐</span>}
+        {/* Badges */}
+        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+          {danmu.type === 'vip' && (
+            <span
+              style={{
+                fontSize: '10px',
+                padding: '2px 5px',
+                borderRadius: '3px',
+                backgroundColor: '#ffd700',
+                color: '#000',
+                fontWeight: 700,
+              }}
+            >
+              VIP
+            </span>
+          )}
+          {danmu.type === 'big_gift' && (
+            <span style={{ fontSize: '12px' }}>🎁</span>
+          )}
+          {isFavorite && <span style={{ fontSize: '12px' }}>⭐</span>}
+        </div>
+
+        {/* Danmu text */}
+        <span style={{ fontWeight: 600, color: DANMU_TYPE_COLORS[danmu.type] || DANMU_TYPE_COLORS.normal }}>
+          {danmu.username}：
+        </span>
+        <span style={{ flex: 1 }}>{danmu.content}</span>
       </div>
 
-      {/* Content */}
-      <div
-        style={{
-          fontSize: '12px',
-          lineHeight: 1.35,
-          color: 'inherit',
-        }}
-      >
-        {danmu.content}
-      </div>
+      {/* Inline reply - show for all danmu with generated reply */}
+      {reply && (
+        <div
+          style={{
+            marginTop: '8px',
+            padding: '8px 10px',
+            backgroundColor: 'rgba(0,0,0,0.3)',
+            borderRadius: '5px',
+            borderLeft: '3px solid #4caf50',
+          }}
+        >
+          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}>
+            推荐回复：
+          </div>
+          <div style={{ fontSize: '14px', color: '#ffffff', lineHeight: 1.4 }}>
+            {reply.content}
+          </div>
+          {typeLabel && (
+            <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{
+                fontSize: '10px',
+                color: matchType === 'trigger' ? '#4caf50' : matchType === 'content' ? '#2196f3' : '#9c27b0',
+                backgroundColor: matchType === 'trigger' ? 'rgba(76,175,80,0.2)' : matchType === 'content' ? 'rgba(33,150,243,0.2)' : 'rgba(156,39,176,0.2)',
+                padding: '2px 5px',
+                borderRadius: '3px',
+              }}>
+                {typeLabel}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSaveReply();
+                }}
+                style={{
+                  padding: '2px 6px',
+                  fontSize: '10px',
+                  border: 'none',
+                  borderRadius: '3px',
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  color: 'rgba(255,255,255,0.7)',
+                  cursor: 'pointer',
+                }}
+                title="存入话术库"
+              >
+                + 存入话术库
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Quick Actions */}
       {showActions && (
         <div
           style={{
             position: 'absolute',
-            top: '4px',
-            right: '4px',
+            top: '6px',
+            right: '6px',
             display: 'flex',
-            gap: '4px',
+            gap: '5px',
           }}
         >
           <button
@@ -462,7 +528,7 @@ function DanmuItem({
               onToggleFavorite();
             }}
             style={{
-              padding: '2px 6px',
+              padding: '3px 8px',
               fontSize: '10px',
               border: 'none',
               borderRadius: '4px',
@@ -480,7 +546,7 @@ function DanmuItem({
               onQuickAdd();
             }}
             style={{
-              padding: '2px 6px',
+              padding: '3px 8px',
               fontSize: '10px',
               border: 'none',
               borderRadius: '4px',
@@ -498,7 +564,7 @@ function DanmuItem({
               onToggleSelect();
             }}
             style={{
-              padding: '2px 6px',
+              padding: '3px 8px',
               fontSize: '10px',
               border: 'none',
               borderRadius: '4px',

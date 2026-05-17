@@ -3,7 +3,7 @@
  * Routes database calls from renderer to main process
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import * as db from '../services/DatabaseService';
 
 export function registerDatabaseHandlers(): void {
@@ -176,6 +176,86 @@ export function registerDatabaseHandlers(): void {
       }
       return { success: false, error: `连接失败: ${errorMsg}` };
     }
+  });
+
+  // Get AI providers (reads from file in main process to avoid localStorage issues)
+  ipcMain.handle('ai:getProviders', async () => {
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const configPath = path.join(process.cwd(), 'data', 'config', 'ai_providers.json');
+      if (fs.existsSync(configPath)) {
+        const content = fs.readFileSync(configPath, 'utf-8');
+        return JSON.parse(content);
+      }
+    } catch (error) {
+      console.error('[IPC] Error reading AI providers:', error);
+    }
+    return { providers: [] };
+  });
+
+  // Get enabled AI provider for OCR (returns first enabled provider)
+  ipcMain.handle('ai:getOcrProvider', async () => {
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const configPath = path.join(process.cwd(), 'data', 'config', 'ai_providers.json');
+      console.log('[IPC] Looking for AI config at:', configPath);
+
+      if (fs.existsSync(configPath)) {
+        const content = fs.readFileSync(configPath, 'utf-8');
+        const config = JSON.parse(content);
+        console.log('[IPC] AI config from file:', JSON.stringify(config).slice(0, 200));
+        const enabledProvider = config.providers?.find((p: any) => p.enabled);
+        if (enabledProvider) {
+          return {
+            baseURL: enabledProvider.baseURL,
+            apiKey: enabledProvider.apiKey || undefined,
+            model: enabledProvider.model,
+            timeout: enabledProvider.timeout || 120000,
+          };
+        }
+      } else {
+        console.log('[IPC] AI config file not found, trying localStorage via renderer...');
+        // Try to get from localStorage via renderer
+        const webContents = BrowserWindow.getAllWindows()[0]?.webContents;
+        if (webContents) {
+          const result = await webContents.executeJavaScript(`
+            new Promise((resolve) => {
+              const item = localStorage.getItem('wordshot_config_ai_providers.json');
+              if (item) {
+                try {
+                  const config = JSON.parse(item);
+                  const enabled = config.providers?.find(p => p.enabled);
+                  if (enabled) {
+                    resolve({
+                      baseURL: enabled.baseURL,
+                      apiKey: enabled.apiKey || undefined,
+                      model: enabled.model,
+                      timeout: enabled.timeout || 120000,
+                    });
+                  } else {
+                    resolve(null);
+                  }
+                } catch (e) {
+                  console.error('Parse error:', e);
+                  resolve(null);
+                }
+              } else {
+                resolve(null);
+              }
+            })
+          `);
+          if (result) {
+            console.log('[IPC] AI config from localStorage:', JSON.stringify(result).slice(0, 200));
+            return result;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[IPC] Error getting OCR provider:', error);
+    }
+    return null;
   });
 
   console.log('[IPC] Database handlers registered');

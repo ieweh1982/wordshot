@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { useTemplateStore } from '../../stores/templateStore';
+import { useTemplateStore, templateStore } from '../../stores/templateStore';
 import { useScriptStore } from '../../stores/scriptStore';
 import { ScriptSelector } from './ScriptSelector';
 import type { ScriptSegment, TemplateTheme, ScriptCategory, SegmentPattern, Script } from '../../types';
@@ -137,6 +137,7 @@ export default function TemplateEditor() {
   const [editingPatterns, setEditingPatterns] = useState<SegmentPattern[]>([]);
   const [repeatCount, setRepeatCount] = useState(1);
   const [showPatternEditor, setShowPatternEditor] = useState(false);
+  const [localFreeContent, setLocalFreeContent] = useState('');
 
   useEffect(() => {
     loadTemplates();
@@ -149,8 +150,10 @@ export default function TemplateEditor() {
   // Sync editing patterns when template changes
   useEffect(() => {
     if (selectedTemplate) {
-      setEditingPatterns(selectedTemplate.patterns || []);
+      const patterns = selectedTemplate.patterns;
+      setEditingPatterns(Array.isArray(patterns) ? patterns : []);
       setRepeatCount(selectedTemplate.repeatCount || 1);
+      setLocalFreeContent(selectedTemplate.freeContent || '');
     }
   }, [selectedTemplate?.id]);
 
@@ -198,15 +201,15 @@ export default function TemplateEditor() {
   };
 
   const handleAddPattern = (pattern: typeof QUICK_PATTERNS[0]) => {
-    setEditingPatterns(prev => [...prev, pattern]);
+    setEditingPatterns(prev => [...(prev || []), pattern]);
   };
 
   const handleRemovePattern = (index: number) => {
-    setEditingPatterns(prev => prev.filter((_, i) => i !== index));
+    setEditingPatterns(prev => (prev || []).filter((_, i) => i !== index));
   };
 
   const handlePatternChange = (index: number, field: keyof SegmentPattern, value: any) => {
-    setEditingPatterns(prev => prev.map((p, i) =>
+    setEditingPatterns(prev => (prev || []).map((p, i) =>
       i === index ? { ...p, [field]: value } : p
     ));
   };
@@ -214,7 +217,7 @@ export default function TemplateEditor() {
   const handleSavePatterns = () => {
     if (!selectedTemplate) return;
     updateTemplate(selectedTemplate.id, {
-      patterns: editingPatterns,
+      patterns: editingPatterns || [],
       repeatCount,
     });
     setShowPatternEditor(false);
@@ -354,110 +357,26 @@ export default function TemplateEditor() {
                 </div>
               </div>
 
-              {/* Pattern Config Section */}
-              <div className="pattern-config">
-                <div className="pattern-config__header">
-                  <h2>节奏配置</h2>
-                  <button
-                    className="pattern-config__edit-btn"
-                    onClick={() => setShowPatternEditor(!showPatternEditor)}
-                  >
-                    {showPatternEditor ? '收起' : '编辑'}
-                  </button>
+              {/* Free Content Section - 无需话术库的自由输入 */}
+              <div className="free-content-section">
+                <div className="free-content-section__header">
+                  <h2>自由输入内容</h2>
+                  <span className="free-content-section__hint">直接输入模板文本，无需配置节奏模式</span>
                 </div>
-
-                {showPatternEditor ? (
-                  <div className="pattern-config__editor">
-                    <div className="pattern-config__quick-add">
-                      <span>快速添加:</span>
-                      {QUICK_PATTERNS.map((p, i) => (
-                        <button
-                          key={i}
-                          className="pattern-config__quick-btn"
-                          onClick={() => handleAddPattern(p)}
-                        >
-                          {p.name}({p.durationMinutes}min)
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="pattern-config__list">
-                      {editingPatterns.map((pattern, index) => (
-                        <div key={index} className="pattern-config__item">
-                          <input
-                            type="text"
-                            value={pattern.name}
-                            onChange={(e) => handlePatternChange(index, 'name', e.target.value)}
-                            className="pattern-config__name-input"
-                          />
-                          <select
-                            value={pattern.category}
-                            onChange={(e) => handlePatternChange(index, 'category', e.target.value as ScriptCategory)}
-                            className="pattern-config__category-select"
-                          >
-                            {SCRIPT_CATEGORIES.map(cat => (
-                              <option key={cat.value} value={cat.value}>{cat.label}</option>
-                            ))}
-                          </select>
-                          <input
-                            type="number"
-                            value={pattern.durationMinutes}
-                            onChange={(e) => handlePatternChange(index, 'durationMinutes', parseInt(e.target.value) || 0)}
-                            className="pattern-config__duration-input"
-                          />
-                          <span>分钟</span>
-                          <button
-                            className="pattern-config__remove-btn"
-                            onClick={() => handleRemovePattern(index)}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="pattern-config__repeat">
-                      <label>循环次数:</label>
-                      <input
-                        type="number"
-                        value={repeatCount}
-                        onChange={(e) => setRepeatCount(parseInt(e.target.value) || 1)}
-                        min="1"
-                        max="10"
-                        className="pattern-config__repeat-input"
-                      />
-                      <span>次 (共 {editingPatterns.reduce((sum, p) => sum + p.durationMinutes, 0) * repeatCount} 分钟)</span>
-                    </div>
-
-                    <div className="pattern-config__actions">
-                      <button onClick={handleSavePatterns} className="btn btn--primary">
-                        保存节奏配置
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="pattern-config__preview">
-                    {editingPatterns.map((pattern, i) => (
-                      <span key={i} className="pattern-config__tag" style={{ backgroundColor: getCategoryInfo(pattern.category).color }}>
-                        {pattern.name} {pattern.durationMinutes}min
-                      </span>
-                    ))}
-                    <span className="pattern-config__repeat-badge">×{repeatCount}</span>
-                  </div>
-                )}
-
-                <div className="pattern-config__generate">
-                  <button
-                    onClick={handleGenerate}
-                    disabled={isGenerating || editingPatterns.length === 0}
-                    className="btn btn--primary"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    {isGenerating ? '生成中...' : '生成话术序列'}
-                  </button>
-                </div>
+                <textarea
+                    className="free-content-section__textarea"
+                    value={localFreeContent || selectedTemplate.freeContent || ''}
+                    onChange={(e) => {
+                      setLocalFreeContent(e.target.value);
+                    }}
+                    onBlur={(e) => {
+                      updateTemplate(selectedTemplate.id, {
+                        freeContent: e.target.value,
+                      });
+                    }}
+                    placeholder="在此输入模板的全部内容，每行一条...\n不依赖话术库，直接自定义文本内容"
+                    rows={8}
+                  />
               </div>
 
               {/* Script Sequence List */}
@@ -505,6 +424,160 @@ export default function TemplateEditor() {
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+
+              {/* Pattern Config Section - 仅在有段落时显示 */}
+              {selectedTemplate.segments.length > 0 && (
+                <div className="pattern-config">
+                  <div className="pattern-config__header">
+                    <h2>节奏配置</h2>
+                    <button
+                      className="pattern-config__edit-btn"
+                      onClick={() => setShowPatternEditor(!showPatternEditor)}
+                    >
+                      {showPatternEditor ? '收起' : '编辑'}
+                    </button>
+                  </div>
+
+                  {showPatternEditor ? (
+                    <div className="pattern-config__editor">
+                      <div className="pattern-config__quick-add">
+                        <span>快速添加:</span>
+                        {QUICK_PATTERNS.map((p, i) => (
+                          <button
+                            key={i}
+                            className="pattern-config__quick-btn"
+                            onClick={() => handleAddPattern(p)}
+                          >
+                            {p.name}({p.durationMinutes}min)
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="pattern-config__list">
+                        {(editingPatterns || []).map((pattern, index) => (
+                          <div key={index} className="pattern-config__item">
+                            <input
+                              type="text"
+                              value={pattern.name}
+                              onChange={(e) => handlePatternChange(index, 'name', e.target.value)}
+                              className="pattern-config__name-input"
+                            />
+                            <select
+                              value={pattern.category}
+                              onChange={(e) => handlePatternChange(index, 'category', e.target.value as ScriptCategory)}
+                              className="pattern-config__category-select"
+                            >
+                              {SCRIPT_CATEGORIES.map(cat => (
+                                <option key={cat.value} value={cat.value}>{cat.label}</option>
+                              ))}
+                            </select>
+                            <input
+                              type="number"
+                              value={pattern.durationMinutes}
+                              onChange={(e) => handlePatternChange(index, 'durationMinutes', parseInt(e.target.value) || 0)}
+                              className="pattern-config__duration-input"
+                            />
+                            <span>分钟</span>
+                            <button
+                              className="pattern-config__remove-btn"
+                              onClick={() => handleRemovePattern(index)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="pattern-config__repeat">
+                        <label>循环次数:</label>
+                        <input
+                          type="number"
+                          value={repeatCount}
+                          onChange={(e) => setRepeatCount(parseInt(e.target.value) || 1)}
+                          min="1"
+                          max="10"
+                          className="pattern-config__repeat-input"
+                        />
+                        <span>次 (共 {(editingPatterns || []).reduce((sum: number, p: any) => sum + p.durationMinutes, 0) * repeatCount} 分钟)</span>
+                      </div>
+
+                      <div className="pattern-config__actions">
+                        <button onClick={handleSavePatterns} className="btn btn--primary">
+                          保存节奏配置
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="pattern-config__preview">
+                      {(editingPatterns || []).map((pattern, i) => (
+                        <span key={i} className="pattern-config__tag" style={{ backgroundColor: getCategoryInfo(pattern.category).color }}>
+                          {pattern.name} {pattern.durationMinutes}min
+                        </span>
+                      ))}
+                      <span className="pattern-config__repeat-badge">×{repeatCount}</span>
+                    </div>
+                  )}
+
+                  <div className="pattern-config__generate">
+                    <button
+                      onClick={handleGenerate}
+                      disabled={isGenerating || (editingPatterns || []).length === 0}
+                      className="btn btn--primary"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      {isGenerating ? '生成中...' : '生成话术序列'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Custom Content Section - 每个段落的自定义文本 */}
+              {selectedTemplate.segments.length > 0 && (
+                <div className="custom-content-section">
+                  <div className="custom-content-section__header">
+                    <h2>自定义内容</h2>
+                    <span className="custom-content-section__hint">每个段落可输入独立的自定义文本</span>
+                  </div>
+                  <div className="custom-content-section__list">
+                    {selectedTemplate.segments.map(seg => (
+                      <div key={seg.id} className="custom-content-item">
+                        <div className="custom-content-item__label">
+                          <span className="custom-content-item__name">{seg.name}</span>
+                          <span
+                            className="custom-content-item__tag"
+                            style={{ backgroundColor: getCategoryInfo(seg.category).color }}
+                          >
+                            {getCategoryInfo(seg.category).label}
+                          </span>
+                        </div>
+                        <textarea
+                          className="custom-content-item__textarea"
+                          value={seg.customContent || ''}
+                          onChange={(e) => {
+                            templateStore.setState(state => ({
+                              templates: state.templates.map(t => ({
+                                ...t,
+                                segments: t.segments.map(s =>
+                                  s.id === seg.id ? { ...s, customContent: e.target.value } : s
+                                ),
+                              })),
+                            }));
+                          }}
+                          onBlur={(e) => {
+                            templateStore.getState().updateSegment(seg.id, {
+                              customContent: e.target.value,
+                            });
+                          }}
+                          placeholder="在此输入自定义文本，每行一条..."
+                          rows={3}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </>
