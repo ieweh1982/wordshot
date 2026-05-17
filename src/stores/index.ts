@@ -5,3 +5,4 @@ export { useDisplayStore, displayStore } from './displayStore';
 export { useLayoutStore, layoutStore } from './layoutStore';
 export { useThemeStore, themeStore } from './themeStore';
 export { useTemplateStore, templateStore } from './templateStore';
+export { useAudioStore, audioStore } from './audioStore';

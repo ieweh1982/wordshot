@@ -4,6 +4,7 @@ import GridLayout from 'react-grid-layout';
 import { ScriptView } from '../components/layout/ScriptView';
 import DanmuPanel from '../components/layout/DanmuPanel';
 import { SlotCardPanel } from '../components/layout/SlotCardPanel';
+import AudioPlayerPanel from '../components/layout/AudioPlayerPanel';
 import { useLayoutStore, LayoutItem } from '../stores/layoutStore';
 import { useThemeStore } from '../stores/themeStore';
 import { useAmmoStore } from '../stores/ammoStore';
@@ -708,6 +709,7 @@ export default function LiveView() {
             {/* Floating panels - script and danmu */}
             {renderPanelContent('script')}
             {renderPanelContent('danmu')}
+            <AudioPlayerPanel />
             {/* Floating slot card panels */}
             {slots.filter(slot => slot.enabled).map((slot) => (
               <SlotCardPanel key={slot.slotId} slot={slot} />
