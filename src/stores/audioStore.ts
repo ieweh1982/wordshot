@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { saveAudioToDb, getAudioBlobUrl, deleteAudioFromDb } from './audioDb';
 
 export interface SoundEffect {
   id: string;
@@ -19,10 +20,11 @@ export interface LyricLine {
   text: string;
 }
 
+// Song stored in localStorage - only metadata, actual audio in IndexedDB
 export interface Song {
   id: string;
   name: string;
-  audioFile: string; // base64 or blob URL
+  audioDbKey: string; // Key to retrieve audio from IndexedDB
   audioDuration: number;
   lyricFile: string | null; // base64 or blob URL
   lyrics: LyricLine[];
@@ -32,7 +34,7 @@ export interface Song {
 export interface BgmLibraryItem {
   id: string;
   name: string;
-  file: string;
+  file: string; // base64 or blob URL
   duration: number;
   addedAt: number;
 }
@@ -55,6 +57,8 @@ export interface AudioPlayerState {
   currentSongTime: number;
   currentSongPlaying: boolean;
   currentLyricLine: number;
+  // 标记 songs 是否已从 IndexedDB 加载
+  songsLoaded: boolean;
 }
 
 interface AudioPlayerActions {
@@ -77,9 +81,9 @@ interface AudioPlayerActions {
   setBgmVolume: (volume: number) => void;
   setBgmLoop: (loop: boolean) => void;
 
-  // Song queue
-  addSong: (song: Omit<Song, 'id'>) => void;
-  removeSong: (id: string) => void;
+  // Song queue - 返回 Promise 版本以便异步加载 IndexedDB 数据
+  addSong: (song: Omit<Song, 'id' | 'audioDbKey'>, arrayBuffer: ArrayBuffer, mimeType: string) => Promise<void>;
+  removeSong: (id: string) => Promise<void>;
   clearSongs: () => void;
   setCurrentSongIndex: (index: number) => void;
   setCurrentSongTime: (time: number) => void;
@@ -87,11 +91,25 @@ interface AudioPlayerActions {
   setCurrentLyricLine: (line: number) => void;
   playNextSong: () => void;
   playPrevSong: () => void;
+  // 从 IndexedDB 加载歌曲音频数据
+  loadSongAudioFromDb: (index: number) => Promise<string | null>;
+  // 初始化时加载所有歌曲音频
+  loadAllSongsAudioFromDb: () => Promise<void>;
 }
 
 const STORAGE_KEY = 'wordshot-audio-config';
 
-const loadFromStorage = () => {
+// 存储到 localStorage 的数据结构（不含音频数据）
+interface StoredConfig {
+  soundEffects: SoundEffect[];
+  bgmVolume: number;
+  bgmLoop: boolean;
+  bgmLibrary: BgmLibraryItem[];
+  songs: Song[];
+  currentSongIndex: number;
+}
+
+const loadFromStorage = (): StoredConfig | null => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -105,12 +123,14 @@ const loadFromStorage = () => {
 
 const saveToStorage = (state: Partial<AudioPlayerState>) => {
   try {
+    // 音频数据已存储在 IndexedDB，只存元数据到 localStorage
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       soundEffects: state.soundEffects,
       bgmVolume: state.bgmVolume,
       bgmLoop: state.bgmLoop,
       bgmLibrary: state.bgmLibrary,
       songs: state.songs,
+      currentSongIndex: state.currentSongIndex,
     }));
   } catch (e) {
     console.error('[audioStore] Failed to save to storage:', e);
@@ -131,6 +151,7 @@ const initialState: AudioPlayerState = {
   currentSongTime: 0,
   currentSongPlaying: false,
   currentLyricLine: 0,
+  songsLoaded: false,
 };
 
 const savedConfig = loadFromStorage();
@@ -140,6 +161,7 @@ const persistedState: Partial<AudioPlayerState> = savedConfig ? {
   bgmLoop: savedConfig.bgmLoop ?? true,
   bgmLibrary: savedConfig.bgmLibrary || [],
   songs: savedConfig.songs || [],
+  currentSongIndex: savedConfig.currentSongIndex ?? -1,
 } : {};
 
 export const audioStore = create<AudioPlayerActions & AudioPlayerState>((set, get) => ({
@@ -213,7 +235,6 @@ export const audioStore = create<AudioPlayerActions & AudioPlayerState>((set, ge
   playSoundEffect: (id) => {
     const effect = get().soundEffects.find((e) => e.id === id);
     if (effect) {
-      // Dispatch event for AudioPlayerPanel to handle
       window.dispatchEvent(new CustomEvent('audio:play-sfx', { detail: { id, effect } }));
     }
   },
@@ -233,20 +254,41 @@ export const audioStore = create<AudioPlayerActions & AudioPlayerState>((set, ge
   },
 
   // Song queue
-  addSong: (song) => {
-    const newSong: Song = {
-      ...song,
-      id: `song-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    };
-    set((state) => {
-      const newSongs = [...state.songs, newSong];
-      // Auto-play if first song
-      const newIndex = state.currentSongIndex === -1 ? 0 : state.currentSongIndex;
-      return { songs: newSongs, currentSongIndex: newIndex };
-    });
+  addSong: async (song, arrayBuffer, mimeType) => {
+    try {
+      console.log('[audioStore] addSong called, byteLength:', arrayBuffer.byteLength, 'mimeType:', mimeType);
+      // 保存音频到 IndexedDB
+      const dbKey = await saveAudioToDb(arrayBuffer, mimeType);
+      console.log('[audioStore] Saved to IndexedDB with key:', dbKey);
+      const newSong: Song = {
+        ...song,
+        id: `song-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        audioDbKey: dbKey,
+      };
+      console.log('[audioStore] Creating new song:', JSON.stringify(newSong).substring(0, 200));
+      set((state) => {
+        const newSongs = [...state.songs, newSong];
+        const newIndex = state.currentSongIndex === -1 ? 0 : state.currentSongIndex;
+        const newState = { songs: newSongs, currentSongIndex: newIndex };
+        saveToStorage(newState);
+        console.log('[audioStore] Song added, total songs:', newSongs.length);
+        return newState;
+      });
+    } catch (e) {
+      console.error('[audioStore] Failed to add song:', e);
+      throw e;
+    }
   },
 
-  removeSong: (id) => {
+  removeSong: async (id) => {
+    const song = get().songs.find((s) => s.id === id);
+    if (song) {
+      try {
+        await deleteAudioFromDb(song.audioDbKey);
+      } catch (e) {
+        console.error('[audioStore] Failed to delete audio from DB:', e);
+      }
+    }
     set((state) => {
       const index = state.songs.findIndex((s) => s.id === id);
       const newSongs = state.songs.filter((s) => s.id !== id);
@@ -256,13 +298,31 @@ export const audioStore = create<AudioPlayerActions & AudioPlayerState>((set, ge
       } else if (index === state.currentSongIndex) {
         newIndex = Math.min(state.currentSongIndex, newSongs.length - 1);
       }
-      return { songs: newSongs, currentSongIndex: newIndex };
+      const newState = { songs: newSongs, currentSongIndex: newIndex };
+      saveToStorage(newState);
+      return newState;
     });
   },
 
-  clearSongs: () => set({ songs: [], currentSongIndex: -1, currentSongTime: 0, currentSongPlaying: false }),
+  clearSongs: () => {
+    const songs = get().songs;
+    // 清理 IndexedDB
+    songs.forEach(async (song) => {
+      try {
+        await deleteAudioFromDb(song.audioDbKey);
+      } catch (e) {
+        console.error('[audioStore] Failed to delete audio from DB:', e);
+      }
+    });
+    const newState = { songs: [], currentSongIndex: -1, currentSongTime: 0, currentSongPlaying: false };
+    saveToStorage(newState);
+    set(newState);
+  },
 
-  setCurrentSongIndex: (index) => set({ currentSongIndex: index, currentSongTime: 0, currentLyricLine: 0 }),
+  setCurrentSongIndex: (index) => {
+    set({ currentSongIndex: index, currentSongTime: 0, currentLyricLine: 0 });
+    saveToStorage({ songs: get().songs, currentSongIndex: index });
+  },
   setCurrentSongTime: (time) => set({ currentSongTime: time }),
   setCurrentSongPlaying: (playing) => set({ currentSongPlaying: playing }),
   setCurrentLyricLine: (line) => set({ currentLyricLine: line }),
@@ -271,14 +331,47 @@ export const audioStore = create<AudioPlayerActions & AudioPlayerState>((set, ge
     const { songs, currentSongIndex } = get();
     if (songs.length === 0) return;
     const nextIndex = (currentSongIndex + 1) % songs.length;
-    set({ currentSongIndex: nextIndex, currentSongTime: 0, currentLyricLine: 0 });
+    const newState = { currentSongIndex: nextIndex, currentSongTime: 0, currentLyricLine: 0 };
+    saveToStorage({ songs, currentSongIndex: nextIndex });
+    set(newState);
   },
 
   playPrevSong: () => {
     const { songs, currentSongIndex } = get();
     if (songs.length === 0) return;
     const prevIndex = currentSongIndex <= 0 ? songs.length - 1 : currentSongIndex - 1;
-    set({ currentSongIndex: prevIndex, currentSongTime: 0, currentLyricLine: 0 });
+    const newState = { currentSongIndex: prevIndex, currentSongTime: 0, currentLyricLine: 0 };
+    saveToStorage({ songs, currentSongIndex: prevIndex });
+    set(newState);
+  },
+
+  // 从 IndexedDB 加载指定歌曲的音频数据（返回 Blob URL）
+  loadSongAudioFromDb: async (index) => {
+    const songs = get().songs;
+    console.log('[audioStore] loadSongAudioFromDb called, index:', index, 'total songs:', songs.length);
+    if (index < 0 || index >= songs.length) {
+      console.error('[audioStore] Invalid index:', index, 'songs length:', songs.length);
+      return null;
+    }
+    const song = songs[index];
+    console.log('[audioStore] Song at index:', song?.name, 'key:', song?.audioDbKey);
+    if (!song.audioDbKey) {
+      console.error('[audioStore] No audioDbKey for song:', song.name);
+      return null;
+    }
+    try {
+      const blobUrl = await getAudioBlobUrl(song.audioDbKey);
+      console.log('[audioStore] getAudioBlobUrl result:', blobUrl);
+      return blobUrl;
+    } catch (e) {
+      console.error('[audioStore] Failed to load song audio from DB:', e);
+      return null;
+    }
+  },
+
+  // 初始化时加载所有歌曲音频到内存
+  loadAllSongsAudioFromDb: async () => {
+    set({ songsLoaded: true });
   },
 }));
 

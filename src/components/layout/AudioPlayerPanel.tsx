@@ -75,7 +75,7 @@ export default function AudioPlayerPanel() {
 
   // Audio refs
   const bgmAudioRef = useRef<HTMLAudioElement | null>(null);
-  const songAudioRef = useRef<HTMLAudioElement | null>(null);
+  const songAudioRef = useRef<HTMLVideoElement | null>(null);
   const sfxAudioContextRef = useRef<AudioContext | null>(null);
 
   // BGM handlers
@@ -209,16 +209,106 @@ export default function AudioPlayerPanel() {
   // Song handlers
   const currentSong = currentSongIndex >= 0 ? songs[currentSongIndex] : null;
 
-  const handleSongPlay = useCallback(() => {
-    if (!songAudioRef.current || !currentSong) return;
-    if (currentSongPlaying) {
-      songAudioRef.current.pause();
-      audioStore.getState().setCurrentSongPlaying(false);
-    } else {
-      songAudioRef.current.play();
-      audioStore.getState().setCurrentSongPlaying(true);
+  const handleSongPlay = useCallback(async () => {
+    if (!currentSong) return;
+
+    const audioId = currentSong.id;
+
+    // 如果已经有音频元素且正在播放或已加载，直接暂停/播放
+    if (songAudioRef.current && songAudioRef.current.src && currentAudioIdRef.current === audioId) {
+      if (currentSongPlaying) {
+        songAudioRef.current.pause();
+        audioStore.getState().setCurrentSongPlaying(false);
+      } else {
+        await songAudioRef.current.play();
+        audioStore.getState().setCurrentSongPlaying(true);
+      }
+      return;
     }
-  }, [currentSongPlaying, currentSong]);
+
+    // 需要加载新歌曲
+    if (songAudioRef.current) {
+      songAudioRef.current.pause();
+      songAudioRef.current.src = '';
+    }
+    currentAudioIdRef.current = audioId;
+
+    const audioData = await audioStore.getState().loadSongAudioFromDb(currentSongIndex);
+    if (!audioData || currentAudioIdRef.current !== audioId) {
+      console.error('[AudioPlayerPanel] No audio data from IndexedDB or song changed');
+      return;
+    }
+
+    const isUnsupportedVideo = audioData.startsWith('data:video/x-matroska');
+
+    if (isUnsupportedVideo) {
+      const audioEl = new Audio();
+      audioEl.src = audioData;
+      audioEl.addEventListener('loadedmetadata', () => {
+        if (currentAudioIdRef.current === audioId) {
+          audioStore.getState().setCurrentSongPlaying(true);
+        }
+      });
+      audioEl.addEventListener('error', () => {
+        console.error('[AudioPlayerPanel] MKV audio element error');
+      });
+      audioEl.addEventListener('timeupdate', () => {
+        if (currentAudioIdRef.current === audioId) {
+          audioStore.getState().setCurrentSongTime(audioEl.currentTime);
+        }
+      });
+      audioEl.addEventListener('ended', () => {
+        if (currentAudioIdRef.current === audioId) {
+          handleSongNext();
+        }
+      });
+      songAudioRef.current = audioEl as unknown as HTMLVideoElement;
+      audioEl.play().catch(console.error);
+    } else {
+      const videoEl = document.createElement('video');
+      videoEl.style.display = 'none';
+      videoEl.playsInline = true;
+      videoEl.crossOrigin = 'anonymous';
+      videoEl.src = audioData;
+      videoEl.addEventListener('timeupdate', () => {
+        if (currentAudioIdRef.current === audioId) {
+          audioStore.getState().setCurrentSongTime(videoEl.currentTime);
+        }
+      });
+      videoEl.addEventListener('ended', () => {
+        if (currentAudioIdRef.current === audioId) {
+          handleSongNext();
+        }
+      });
+      videoEl.addEventListener('error', () => {
+        console.error('[AudioPlayerPanel] Song video error');
+        if (currentAudioIdRef.current !== audioId) return;
+        const audioEl = new Audio();
+        audioEl.src = audioData;
+        audioEl.addEventListener('loadedmetadata', () => {
+          if (currentAudioIdRef.current === audioId) {
+            audioStore.getState().setCurrentSongPlaying(true);
+          }
+        });
+        audioEl.addEventListener('error', () => console.error('[AudioPlayerPanel] Fallback audio failed'));
+        audioEl.addEventListener('timeupdate', () => {
+          if (currentAudioIdRef.current === audioId) {
+            audioStore.getState().setCurrentSongTime(audioEl.currentTime);
+          }
+        });
+        audioEl.addEventListener('ended', () => {
+          if (currentAudioIdRef.current === audioId) {
+            handleSongNext();
+          }
+        });
+        songAudioRef.current = audioEl as unknown as HTMLVideoElement;
+        audioEl.play().catch(console.error);
+      });
+      songAudioRef.current = videoEl;
+      videoEl.play().catch(console.error);
+    }
+    audioStore.getState().setCurrentSongPlaying(true);
+  }, [currentSong, currentSongIndex, currentSongPlaying]);
 
   const handleSongNext = useCallback(() => {
     audioStore.getState().playNextSong();
@@ -237,43 +327,120 @@ export default function AudioPlayerPanel() {
   }, []);
 
   // Song audio setup
+  // Ref to track current audio element for cleanup
+  const currentAudioIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (currentSong) {
-      if (!songAudioRef.current) {
-        songAudioRef.current = new Audio(currentSong.audioFile);
-        songAudioRef.current.addEventListener('timeupdate', () => {
-          if (songAudioRef.current) {
-            const time = songAudioRef.current.currentTime;
-            audioStore.getState().setCurrentSongTime(time);
-            // Update lyric line
-            const lyrics = currentSong.lyrics;
-            if (lyrics && lyrics.length > 0) {
-              let lineIndex = 0;
-              for (let i = 0; i < lyrics.length; i++) {
-                if (lyrics[i].time <= time) {
-                  lineIndex = i;
-                } else {
-                  break;
-                }
-              }
-              audioStore.getState().setCurrentLyricLine(lineIndex);
-            }
-          }
-        });
-        songAudioRef.current.addEventListener('ended', () => {
-          handleSongNext();
-        });
-      } else {
-        songAudioRef.current.src = currentSong.audioFile;
-      }
-    }
-    return () => {
+    if (!currentSong) return;
+
+    const audioId = currentSong.id;
+    currentAudioIdRef.current = audioId;
+
+    const loadAndPlayAudio = async () => {
+      // 强制停止之前的音频
       if (songAudioRef.current) {
         songAudioRef.current.pause();
         songAudioRef.current.src = '';
       }
+
+      // 再次检查是否已被切换（因为是异步的）
+      if (currentAudioIdRef.current !== audioId) {
+        return;
+      }
+
+      // 从 IndexedDB 加载音频数据
+      const audioData = await audioStore.getState().loadSongAudioFromDb(currentSongIndex);
+      if (!audioData) {
+        console.error('[AudioPlayerPanel] No audio data from IndexedDB');
+        return;
+      }
+
+      // 再次检查是否已被切换
+      if (currentAudioIdRef.current !== audioId) {
+        return;
+      }
+
+      // 检测是否是浏览器不支持的视频格式（mkv 等），尝试只用 audio 元素播放音频轨道
+      const isUnsupportedVideo = audioData.startsWith('data:video/x-matroska');
+
+      if (isUnsupportedVideo) {
+        const audioEl = new Audio();
+        audioEl.src = audioData;
+        audioEl.addEventListener('loadedmetadata', () => {
+          if (currentAudioIdRef.current === audioId) {
+            audioStore.getState().setCurrentSongPlaying(true);
+          }
+        });
+        audioEl.addEventListener('error', () => {
+          console.error('[AudioPlayerPanel] MKV audio element error');
+        });
+        audioEl.addEventListener('timeupdate', () => {
+          if (currentAudioIdRef.current === audioId) {
+            audioStore.getState().setCurrentSongTime(audioEl.currentTime);
+          }
+        });
+        audioEl.addEventListener('ended', () => {
+          if (currentAudioIdRef.current === audioId) {
+            handleSongNext();
+          }
+        });
+        songAudioRef.current = audioEl as unknown as HTMLVideoElement;
+        audioEl.play().catch(console.error);
+      } else {
+        const videoEl = document.createElement('video');
+        videoEl.style.display = 'none';
+        videoEl.playsInline = true;
+        videoEl.crossOrigin = 'anonymous';
+        videoEl.src = audioData;
+        videoEl.addEventListener('timeupdate', () => {
+          if (currentAudioIdRef.current === audioId) {
+            audioStore.getState().setCurrentSongTime(videoEl.currentTime);
+          }
+        });
+        videoEl.addEventListener('ended', () => {
+          if (currentAudioIdRef.current === audioId) {
+            handleSongNext();
+          }
+        });
+        videoEl.addEventListener('error', () => {
+          console.error('[AudioPlayerPanel] Song video error, trying audio fallback');
+          if (currentAudioIdRef.current !== audioId) return;
+          const audioEl = new Audio();
+          audioEl.src = audioData;
+          audioEl.addEventListener('loadedmetadata', () => {
+            if (currentAudioIdRef.current === audioId) {
+              audioStore.getState().setCurrentSongPlaying(true);
+            }
+          });
+          audioEl.addEventListener('error', () => {
+            console.error('[AudioPlayerPanel] Fallback audio also failed');
+          });
+          audioEl.addEventListener('timeupdate', () => {
+            if (currentAudioIdRef.current === audioId) {
+              audioStore.getState().setCurrentSongTime(audioEl.currentTime);
+            }
+          });
+          audioEl.addEventListener('ended', () => {
+            if (currentAudioIdRef.current === audioId) {
+              handleSongNext();
+            }
+          });
+          songAudioRef.current = audioEl as unknown as HTMLVideoElement;
+          audioEl.play().catch(console.error);
+        });
+        songAudioRef.current = videoEl;
+      }
     };
-  }, [currentSong]);
+
+    loadAndPlayAudio();
+
+    return () => {
+      if (songAudioRef.current && currentAudioIdRef.current === audioId) {
+        songAudioRef.current.pause();
+        songAudioRef.current.src = '';
+      }
+    };
+  }, [currentSong, currentSongIndex]);
 
   // File handlers
   const handleAddBgmFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -323,39 +490,88 @@ export default function AudioPlayerPanel() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const audioFile = Array.from(files).find(f => f.type.startsWith('audio/'));
+    // 扩展名检查
+    const videoExtensions = ['.mp4', '.mkv', '.webm', '.m4v', '.mov'];
+    const audioExtensions = ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'];
+
+    const audioFile = Array.from(files).find(f => {
+      const nameLower = f.name.toLowerCase();
+      const isVideo = videoExtensions.some(ext => nameLower.endsWith(ext));
+      const isAudio = audioExtensions.some(ext => nameLower.endsWith(ext));
+      return isVideo || isAudio || f.type.startsWith('audio/') || f.type.startsWith('video/');
+    });
     const lrcFile = Array.from(files).find(f => f.name.endsWith('.lrc'));
 
-    if (!audioFile) return;
-
-    let lyrics: LyricLine[] = [];
-    let lyricFile: string | null = null;
-
-    if (lrcFile) {
-      const lrcContent = await lrcFile.text();
-      lyrics = parseLRC(lrcContent);
-      const lrcReader = new FileReader();
-      lyricFile = await new Promise<string>((resolve) => {
-        lrcReader.onload = (event) => resolve(event.target?.result as string);
-        lrcReader.readAsDataURL(lrcFile);
-      });
+    if (!audioFile) {
+      console.error('[AudioPlayerPanel] No valid audio file found in selection');
+      return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const audioData = event.target?.result as string;
-      const audio = new Audio(audioData);
-      audio.addEventListener('loadedmetadata', () => {
-        audioStore.getState().addSong({
-          name: audioFile.name.replace(/\.[^/.]+$/, ''),
-          audioFile: audioData,
-          audioDuration: audio.duration,
-          lyricFile,
-          lyrics,
-        });
+    try {
+      let lyrics: LyricLine[] = [];
+      let lyricFile: string | null = null;
+
+      // 读取音频文件 - 使用 ArrayBuffer 更高效
+      console.log('[AudioPlayerPanel] About to read file:', audioFile.name, 'size:', audioFile.size);
+      const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          console.log('[AudioPlayerPanel] FileReader loaded, result type:', typeof e.target?.result, 'byteLength:', (e.target?.result as ArrayBuffer)?.byteLength);
+          resolve(e.target?.result as ArrayBuffer);
+        };
+        reader.onerror = (e) => {
+          console.error('[AudioPlayerPanel] FileReader error:', reader.error);
+          reject(reader.error);
+        };
+        reader.readAsArrayBuffer(audioFile);
       });
-    };
-    reader.readAsDataURL(audioFile);
+      console.log('[AudioPlayerPanel] ArrayBuffer received, byteLength:', arrayBuffer.byteLength);
+
+      // 保存到 IndexedDB
+      const mimeType = audioFile.type || (audioFile.name.toLowerCase().endsWith('.mkv') ? 'video/x-matroska' : 'audio/mpeg');
+      console.log('[AudioPlayerPanel] Saving to IndexedDB, mimeType:', mimeType);
+      await audioStore.getState().addSong({
+        name: audioFile.name.replace(/\.[^/.]+$/, ''),
+        audioDuration: 0,
+        lyricFile: null,
+        lyrics: [],
+      }, arrayBuffer, mimeType);
+      console.log('[AudioPlayerPanel] Song saved to IndexedDB');
+
+      // 处理歌词文件（如果存在）
+      if (lrcFile) {
+        const lrcContent = await lrcFile.text();
+        lyrics = parseLRC(lrcContent);
+        lyricFile = await new Promise<string>((resolve, reject) => {
+          const lrcReader = new FileReader();
+          lrcReader.onload = (e) => resolve(e.target?.result as string);
+          lrcReader.onerror = () => reject(lrcReader.error);
+          lrcReader.readAsDataURL(lrcFile);
+        });
+      }
+
+      // 获取时长（可选，不影响保存）
+      const isVideo = videoExtensions.some(ext => audioFile.name.toLowerCase().endsWith(ext));
+      if (!isVideo || (!audioFile.name.toLowerCase().endsWith('.mkv') && audioFile.type !== 'video/x-matroska')) {
+        const tempBlob = new Blob([arrayBuffer], { type: mimeType });
+        const tempUrl = URL.createObjectURL(tempBlob);
+        const mediaEl = document.createElement(isVideo ? 'video' : 'audio');
+        mediaEl.src = tempUrl;
+        try {
+          const duration = await new Promise<number>((resolve) => {
+            mediaEl.addEventListener('loadedmetadata', () => resolve(mediaEl.duration));
+            mediaEl.addEventListener('error', () => resolve(0));
+          });
+          if (duration > 0) {
+            console.log('[AudioPlayerPanel] Got duration:', duration);
+          }
+        } catch (e) {
+          console.log('[AudioPlayerPanel] Could not get duration');
+        }
+      }
+    } catch (err) {
+      console.error('[AudioPlayerPanel] Error adding song:', err);
+    }
     e.target.value = '';
   }, []);
 
@@ -577,7 +793,7 @@ export default function AudioPlayerPanel() {
               添加到音乐库
               <input
                 type="file"
-                accept="audio/*"
+                accept="audio/*,video/mp4,video/webm,video/*"
                 onChange={handleAddBgmFile}
                 style={{ display: 'none' }}
               />
@@ -605,7 +821,7 @@ export default function AudioPlayerPanel() {
               添加音效
               <input
                 type="file"
-                accept="audio/*"
+                accept="audio/*,video/mp4,video/webm,video/*"
                 onChange={handleAddSfxFile}
                 style={{ display: 'none' }}
               />
@@ -699,7 +915,7 @@ export default function AudioPlayerPanel() {
               添加歌曲 (音频 + 歌词)
               <input
                 type="file"
-                accept="audio/*,.lrc"
+                accept="audio/*,video/*,.mp4,.mkv,.m4a,.m4v,.mov,.webm,.wav,.ogg,.flac,.aac,.lrc"
                 multiple
                 onChange={handleAddSongFiles}
                 style={{ display: 'none' }}
