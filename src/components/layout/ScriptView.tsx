@@ -315,8 +315,8 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
         const deltaY = e.clientY - sizeDragRef.current.startMouseY;
         setFloatingPosition('script', {
           ...floatingPos,
-          width: Math.max(200, Math.min(800, sizeDragRef.current.startWidth + deltaX)),
-          height: Math.max(150, Math.min(600, sizeDragRef.current.startHeight + deltaY)),
+          width: Math.max(200, sizeDragRef.current.startWidth + deltaX),
+          height: Math.max(150, sizeDragRef.current.startHeight + deltaY),
         });
       }
     };
@@ -340,7 +340,6 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
     backgroundColor: 'transparent',
     color: textColor,
     '--script-accent': accentColor,
-    opacity,
   } as React.CSSProperties;
 
   return (
@@ -354,10 +353,11 @@ export const ScriptView: React.FC<ScriptViewProps> = ({ className = '', scripts:
         height: floatingPos.height,
         cursor: 'move',
         userSelect: 'none',
+        background: `rgba(30, 30, 46, ${opacity})`,
       }}
       onMouseDown={handlePositionDragStart}
     >
-      <div className="floating-panel__header">
+      <div className="floating-panel__header" style={{ background: `rgba(30, 30, 46, ${opacity})` }}>
         <span className="floating-panel__title">主提词区</span>
         <span
           className="floating-panel__resize-hint"

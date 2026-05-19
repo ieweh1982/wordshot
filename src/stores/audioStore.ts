@@ -57,6 +57,8 @@ export interface AudioPlayerState {
   currentSongTime: number;
   currentSongPlaying: boolean;
   currentLyricLine: number;
+  // 歌词时间偏移量（秒），正值提前，负值延后
+  lyricTimeOffset: number;
   // 标记 songs 是否已从 IndexedDB 加载
   songsLoaded: boolean;
 }
@@ -89,6 +91,8 @@ interface AudioPlayerActions {
   setCurrentSongTime: (time: number) => void;
   setCurrentSongPlaying: (playing: boolean) => void;
   setCurrentLyricLine: (line: number) => void;
+  setLyricTimeOffset: (offset: number) => void;
+  adjustLyricTimeOffset: (delta: number) => void;
   playNextSong: () => void;
   playPrevSong: () => void;
   // 从 IndexedDB 加载歌曲音频数据
@@ -107,6 +111,7 @@ interface StoredConfig {
   bgmLibrary: BgmLibraryItem[];
   songs: Song[];
   currentSongIndex: number;
+  lyricTimeOffset: number;
 }
 
 const loadFromStorage = (): StoredConfig | null => {
@@ -131,6 +136,7 @@ const saveToStorage = (state: Partial<AudioPlayerState>) => {
       bgmLibrary: state.bgmLibrary,
       songs: state.songs,
       currentSongIndex: state.currentSongIndex,
+      lyricTimeOffset: state.lyricTimeOffset,
     }));
   } catch (e) {
     console.error('[audioStore] Failed to save to storage:', e);
@@ -151,6 +157,7 @@ const initialState: AudioPlayerState = {
   currentSongTime: 0,
   currentSongPlaying: false,
   currentLyricLine: 0,
+  lyricTimeOffset: 0,
   songsLoaded: false,
 };
 
@@ -162,6 +169,7 @@ const persistedState: Partial<AudioPlayerState> = savedConfig ? {
   bgmLibrary: savedConfig.bgmLibrary || [],
   songs: savedConfig.songs || [],
   currentSongIndex: savedConfig.currentSongIndex ?? -1,
+  lyricTimeOffset: savedConfig.lyricTimeOffset ?? 0,
 } : {};
 
 export const audioStore = create<AudioPlayerActions & AudioPlayerState>((set, get) => ({
@@ -256,7 +264,6 @@ export const audioStore = create<AudioPlayerActions & AudioPlayerState>((set, ge
   // Song queue
   addSong: async (song, arrayBuffer, mimeType) => {
     try {
-      console.log('[audioStore] addSong called, byteLength:', arrayBuffer.byteLength, 'mimeType:', mimeType);
       // 保存音频到 IndexedDB
       const dbKey = await saveAudioToDb(arrayBuffer, mimeType);
       console.log('[audioStore] Saved to IndexedDB with key:', dbKey);
@@ -326,6 +333,15 @@ export const audioStore = create<AudioPlayerActions & AudioPlayerState>((set, ge
   setCurrentSongTime: (time) => set({ currentSongTime: time }),
   setCurrentSongPlaying: (playing) => set({ currentSongPlaying: playing }),
   setCurrentLyricLine: (line) => set({ currentLyricLine: line }),
+  setLyricTimeOffset: (offset) => {
+    set({ lyricTimeOffset: offset });
+    saveToStorage({ lyricTimeOffset: offset });
+  },
+  adjustLyricTimeOffset: (delta) => {
+    const newOffset = get().lyricTimeOffset + delta;
+    set({ lyricTimeOffset: newOffset });
+    saveToStorage({ lyricTimeOffset: newOffset });
+  },
 
   playNextSong: () => {
     const { songs, currentSongIndex } = get();

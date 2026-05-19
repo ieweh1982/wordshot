@@ -305,6 +305,42 @@
   gap: 10px;
 }
 
+/* 歌词时间偏移控制 */
+.song-lyric-offset {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.song-offset-btn {
+  background: rgba(233, 69, 96, 0.2);
+  border: 1px solid rgba(233, 69, 96, 0.4);
+  border-radius: 3px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 10px;
+  padding: 3px 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.song-offset-btn:hover {
+  background: rgba(233, 69, 96, 0.4);
+  color: #fff;
+}
+
+.song-offset-btn:active {
+  transform: scale(0.95);
+}
+
+.song-offset-value {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  min-width: 40px;
+  text-align: center;
+}
+
 .song-name {
   font-size: 14px;
   font-weight: 600;
@@ -340,6 +376,10 @@
   color: #e94560;
   background: rgba(233, 69, 96, 0.2);
   font-weight: 600;
+}
+
+.lyric-line--passed {
+  color: rgba(255, 255, 255, 0.35);
 }
 
 .lyrics-empty {

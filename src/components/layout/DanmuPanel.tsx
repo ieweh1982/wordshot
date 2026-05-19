@@ -284,8 +284,8 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
         const deltaY = e.clientY - sizeDragRef.current.startMouseY;
         setFloatingPosition('danmu', {
           ...floatingPos,
-          width: Math.max(150, Math.min(600, sizeDragRef.current.startWidth + deltaX)),
-          height: Math.max(200, Math.min(600, sizeDragRef.current.startHeight + deltaY)),
+          width: Math.max(150, sizeDragRef.current.startWidth + deltaX),
+          height: Math.max(200, sizeDragRef.current.startHeight + deltaY),
         });
       }
     };
@@ -333,10 +333,11 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
         userSelect: 'none',
         display: 'flex',
         flexDirection: 'column',
+        background: `rgba(30, 30, 46, ${opacity})`,
       }}
       onMouseDown={handlePositionDragStart}
     >
-      <div className="floating-panel__header">
+      <div className="floating-panel__header" style={{ background: `rgba(30, 30, 46, ${opacity})` }}>
         <span className="floating-panel__title">公屏互动</span>
         <span
           className="floating-panel__resize-hint"
@@ -351,7 +352,6 @@ export default function DanmuPanel({ className = '' }: DanmuPanelProps) {
           flexDirection: 'column',
           backgroundColor: 'transparent',
           overflow: 'hidden',
-          opacity,
         }}
       >
       {/* Controls */}

@@ -463,7 +463,7 @@ export function AmmoZone({ className = '' }: AmmoZoneProps) {
   };
 
   return (
-    <div className={`ammo-zone ${className}`} style={{ opacity }}>
+    <div className={`ammo-zone ${className}`} style={{ backgroundColor: `rgba(30, 30, 46, ${opacity})` }}>
       <div className="ammo-zone__cards">
         {slots.filter(slot => slot.enabled).map((slot) => {
           const slotScripts = getSlotScripts(slot.sourceCategory);

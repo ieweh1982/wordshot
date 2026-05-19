@@ -4,7 +4,6 @@
   --script-bg: transparent;
   --script-text: #ffffff;
   --script-accent: #e94560;
-  --script-opacity: 1;
   --highlight-color: #4CAF50;
 
   display: flex;
@@ -12,7 +11,6 @@
   flex: 1;
   background: var(--theme-background, transparent);
   color: var(--theme-text, #ffffff);
-  opacity: var(--script-opacity);
   outline: none;
   user-select: none;
   position: relative;
@@ -238,19 +236,6 @@
 .script-view[data-theme="warm"] {
   --script-bg: #3e2723;
   --script-text: #fff8e1;
-}
-
-/* 透明度支持 */
-.script-view[data-opacity="0.5"] {
-  --script-opacity: 0.5;
-}
-
-.script-view[data-opacity="0.75"] {
-  --script-opacity: 0.75;
-}
-
-.script-view[data-opacity="1"] {
-  --script-opacity: 1;
 }
 
 /* 聚焦样式 */

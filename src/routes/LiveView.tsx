@@ -5,6 +5,7 @@ import { ScriptView } from '../components/layout/ScriptView';
 import DanmuPanel from '../components/layout/DanmuPanel';
 import { SlotCardPanel } from '../components/layout/SlotCardPanel';
 import AudioPlayerPanel from '../components/layout/AudioPlayerPanel';
+import LyricsFloatingPanel from '../components/layout/LyricsFloatingPanel';
 import { useLayoutStore, LayoutItem } from '../stores/layoutStore';
 import { useThemeStore } from '../stores/themeStore';
 import { useAmmoStore } from '../stores/ammoStore';
@@ -710,6 +711,7 @@ export default function LiveView() {
             {renderPanelContent('script')}
             {renderPanelContent('danmu')}
             <AudioPlayerPanel />
+            <LyricsFloatingPanel />
             {/* Floating slot card panels */}
             {slots.filter(slot => slot.enabled).map((slot) => (
               <SlotCardPanel key={slot.slotId} slot={slot} />

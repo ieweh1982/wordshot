@@ -478,6 +478,11 @@ kbd {
   z-index: 10;
 }
 
+.floating-panel--script .floating-panel__header {
+  background: transparent;
+  border: none;
+}
+
 .floating-panel--danmu {
   z-index: 10;
 }
@@ -510,6 +515,123 @@ kbd {
 
 .floating-panel__resize-hint:hover {
   color: rgba(255, 255, 255, 0.7);
+}
+
+/* Template List (Step 2) */
+.template-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.template-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.template-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.template-item.selected {
+  border-color: var(--theme-accent);
+  background-color: rgba(233, 69, 96, 0.15);
+}
+
+.template-item-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--theme-text);
+}
+
+.template-item-info {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Display Config List (Step 3) */
+.display-config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.config-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.config-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.config-item.selected {
+  border-color: var(--theme-accent);
+  background-color: rgba(233, 69, 96, 0.15);
+}
+
+.config-item-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--theme-text);
+}
+
+.config-item-info {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Ready Summary (Step 4) */
+.ready-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.summary-item:last-child {
+  border-bottom: none;
+}
+
+.summary-label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.summary-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--theme-text);
 }
 
 /* Responsive adjustments */

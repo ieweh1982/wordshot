@@ -4,26 +4,74 @@ import { layoutStore } from '../../stores/layoutStore';
 import './AudioPlayerPanel.css';
 
 // LRC parser
+// LRC parser - 支持多种格式的时间标签
+// 也支持纯文本歌词（无时间标签）
 function parseLRC(lrc: string): LyricLine[] {
-  const lines = lrc.split('\n');
+  const lines = lrc.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
   const lyrics: LyricLine[] = [];
-  const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
 
+  // 先尝试解析有时间标签的歌词
+  let hasTimeTag = false;
   for (const line of lines) {
-    const match = line.match(timeRegex);
-    if (match) {
-      const minutes = parseInt(match[1], 10);
-      const seconds = parseInt(match[2], 10);
-      const ms = parseInt(match[3].padEnd(3, '0'), 10);
-      const time = minutes * 60 + seconds + ms / 1000;
-      const text = line.replace(timeRegex, '').trim();
-      if (text) {
-        lyrics.push({ time, text });
-      }
+    if (line.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\]/)) {
+      hasTimeTag = true;
+      break;
     }
   }
 
-  return lyrics.sort((a, b) => a.time - b.time);
+  if (hasTimeTag) {
+    // 有时间标签的 LRC
+    for (const line of lines) {
+      const match = line.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\]/);
+      if (match) {
+        const minutes = parseInt(match[1], 10);
+        const seconds = parseInt(match[2], 10);
+        const msStr = match[3];
+        const time = minutes * 60 + seconds + parseInt(msStr, 10) / (msStr.length === 2 ? 100 : 1000);
+        const text = line.replace(/\[(\d{2}):(\d{2})\.(\d{2,3})\]/g, '').trim();
+        if (text) {
+          lyrics.push({ time, text });
+        }
+      }
+    }
+    return lyrics.sort((a, b) => a.time - b.time);
+  } else {
+    // 无时间标签的纯文本歌词，按行分割，每行间隔 4 秒
+    let time = 0;
+    for (const line of lines) {
+      const text = line.trim();
+      if (text && !text.startsWith('[')) {
+        // 跳过可能是元数据的行（如 [ti:xxx] [ar:xxx] 等）
+        if (text.startsWith('[')) continue;
+        lyrics.push({ time, text });
+        time += 4; // 每行间隔 4 秒
+      }
+    }
+    return lyrics;
+  }
+}
+
+function getVisibleLyrics(lyrics: LyricLine[], currentTime: number, offset: number = 0): { before: LyricLine[]; current: LyricLine | null; after: LyricLine[] } {
+  if (!lyrics || lyrics.length === 0) {
+    return { before: [], current: null, after: [] };
+  }
+
+  const adjustedTime = currentTime + offset;
+
+  let currentIndex = -1;
+  for (let i = 0; i < lyrics.length; i++) {
+    if (lyrics[i].time <= adjustedTime) {
+      currentIndex = i;
+    } else {
+      break;
+    }
+  }
+
+  return {
+    before: currentIndex >= 0 ? lyrics.slice(0, currentIndex) : [],
+    current: currentIndex >= 0 ? lyrics[currentIndex] : null,
+    after: lyrics.slice(currentIndex + 1),
+  };
 }
 
 type TabType = 'bgm' | 'sfx' | 'song';
@@ -72,6 +120,7 @@ export default function AudioPlayerPanel() {
   const currentSongTime = audioStore((state) => state.currentSongTime);
   const currentSongPlaying = audioStore((state) => state.currentSongPlaying);
   const currentLyricLine = audioStore((state) => state.currentLyricLine);
+  const lyricTimeOffset = audioStore((state) => state.lyricTimeOffset);
 
   // Audio refs
   const bgmAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -255,6 +304,20 @@ export default function AudioPlayerPanel() {
       audioEl.addEventListener('timeupdate', () => {
         if (currentAudioIdRef.current === audioId) {
           audioStore.getState().setCurrentSongTime(audioEl.currentTime);
+          const lyrics = currentSong.lyrics;
+          const offset = audioStore.getState().lyricTimeOffset;
+          if (lyrics && lyrics.length > 0) {
+            const adjustedTime = audioEl.currentTime + offset;
+            let lineIndex = 0;
+            for (let i = 0; i < lyrics.length; i++) {
+              if (lyrics[i].time <= adjustedTime) {
+                lineIndex = i;
+              } else {
+                break;
+              }
+            }
+            audioStore.getState().setCurrentLyricLine(lineIndex);
+          }
         }
       });
       audioEl.addEventListener('ended', () => {
@@ -273,6 +336,21 @@ export default function AudioPlayerPanel() {
       videoEl.addEventListener('timeupdate', () => {
         if (currentAudioIdRef.current === audioId) {
           audioStore.getState().setCurrentSongTime(videoEl.currentTime);
+          // Update lyric line
+          const lyrics = currentSong.lyrics;
+          const offset = audioStore.getState().lyricTimeOffset;
+          if (lyrics && lyrics.length > 0) {
+            const adjustedTime = videoEl.currentTime + offset;
+            let lineIndex = 0;
+            for (let i = 0; i < lyrics.length; i++) {
+              if (lyrics[i].time <= adjustedTime) {
+                lineIndex = i;
+              } else {
+                break;
+              }
+            }
+            audioStore.getState().setCurrentLyricLine(lineIndex);
+          }
         }
       });
       videoEl.addEventListener('ended', () => {
@@ -294,6 +372,21 @@ export default function AudioPlayerPanel() {
         audioEl.addEventListener('timeupdate', () => {
           if (currentAudioIdRef.current === audioId) {
             audioStore.getState().setCurrentSongTime(audioEl.currentTime);
+            // Update lyric line
+            const lyrics = currentSong.lyrics;
+            const offset = audioStore.getState().lyricTimeOffset;
+            if (lyrics && lyrics.length > 0) {
+              const adjustedTime = audioEl.currentTime + offset;
+              let lineIndex = 0;
+              for (let i = 0; i < lyrics.length; i++) {
+                if (lyrics[i].time <= adjustedTime) {
+                  lineIndex = i;
+                } else {
+                  break;
+                }
+              }
+              audioStore.getState().setCurrentLyricLine(lineIndex);
+            }
           }
         });
         audioEl.addEventListener('ended', () => {
@@ -377,6 +470,21 @@ export default function AudioPlayerPanel() {
         audioEl.addEventListener('timeupdate', () => {
           if (currentAudioIdRef.current === audioId) {
             audioStore.getState().setCurrentSongTime(audioEl.currentTime);
+            // Update lyric line
+            const lyrics = currentSong.lyrics;
+            const offset = audioStore.getState().lyricTimeOffset;
+            if (lyrics && lyrics.length > 0) {
+              const adjustedTime = audioEl.currentTime + offset;
+              let lineIndex = 0;
+              for (let i = 0; i < lyrics.length; i++) {
+                if (lyrics[i].time <= adjustedTime) {
+                  lineIndex = i;
+                } else {
+                  break;
+                }
+              }
+              audioStore.getState().setCurrentLyricLine(lineIndex);
+            }
           }
         });
         audioEl.addEventListener('ended', () => {
@@ -395,6 +503,20 @@ export default function AudioPlayerPanel() {
         videoEl.addEventListener('timeupdate', () => {
           if (currentAudioIdRef.current === audioId) {
             audioStore.getState().setCurrentSongTime(videoEl.currentTime);
+            const lyrics = currentSong.lyrics;
+            const offset = audioStore.getState().lyricTimeOffset;
+            if (lyrics && lyrics.length > 0) {
+              const adjustedTime = videoEl.currentTime + offset;
+              let lineIndex = 0;
+              for (let i = 0; i < lyrics.length; i++) {
+                if (lyrics[i].time <= adjustedTime) {
+                  lineIndex = i;
+                } else {
+                  break;
+                }
+              }
+              audioStore.getState().setCurrentLyricLine(lineIndex);
+            }
           }
         });
         videoEl.addEventListener('ended', () => {
@@ -441,6 +563,19 @@ export default function AudioPlayerPanel() {
       }
     };
   }, [currentSong, currentSongIndex]);
+
+  // Scroll to active lyric line
+  useEffect(() => {
+    const container = document.getElementById('lyrics-container');
+    const activeLine = document.getElementById('lyric-active');
+    if (container && activeLine) {
+      const containerHeight = container.clientHeight;
+      const activeLineTop = activeLine.offsetTop;
+      const activeLineHeight = activeLine.clientHeight;
+      const targetScroll = activeLineTop - containerHeight / 2 + activeLineHeight / 2;
+      container.scrollTo({ top: targetScroll, behavior: 'smooth' });
+    }
+  }, [currentLyricLine]);
 
   // File handlers
   const handleAddBgmFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -500,45 +635,17 @@ export default function AudioPlayerPanel() {
       const isAudio = audioExtensions.some(ext => nameLower.endsWith(ext));
       return isVideo || isAudio || f.type.startsWith('audio/') || f.type.startsWith('video/');
     });
-    const lrcFile = Array.from(files).find(f => f.name.endsWith('.lrc'));
+    const lrcFile = Array.from(files).find(f => f.name.toLowerCase().endsWith('.lrc'));
 
     if (!audioFile) {
-      console.error('[AudioPlayerPanel] No valid audio file found in selection');
       return;
     }
 
     try {
+      // 处理歌词文件（如果存在）- 需要在 addSong 之前处理
       let lyrics: LyricLine[] = [];
       let lyricFile: string | null = null;
 
-      // 读取音频文件 - 使用 ArrayBuffer 更高效
-      console.log('[AudioPlayerPanel] About to read file:', audioFile.name, 'size:', audioFile.size);
-      const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          console.log('[AudioPlayerPanel] FileReader loaded, result type:', typeof e.target?.result, 'byteLength:', (e.target?.result as ArrayBuffer)?.byteLength);
-          resolve(e.target?.result as ArrayBuffer);
-        };
-        reader.onerror = (e) => {
-          console.error('[AudioPlayerPanel] FileReader error:', reader.error);
-          reject(reader.error);
-        };
-        reader.readAsArrayBuffer(audioFile);
-      });
-      console.log('[AudioPlayerPanel] ArrayBuffer received, byteLength:', arrayBuffer.byteLength);
-
-      // 保存到 IndexedDB
-      const mimeType = audioFile.type || (audioFile.name.toLowerCase().endsWith('.mkv') ? 'video/x-matroska' : 'audio/mpeg');
-      console.log('[AudioPlayerPanel] Saving to IndexedDB, mimeType:', mimeType);
-      await audioStore.getState().addSong({
-        name: audioFile.name.replace(/\.[^/.]+$/, ''),
-        audioDuration: 0,
-        lyricFile: null,
-        lyrics: [],
-      }, arrayBuffer, mimeType);
-      console.log('[AudioPlayerPanel] Song saved to IndexedDB');
-
-      // 处理歌词文件（如果存在）
       if (lrcFile) {
         const lrcContent = await lrcFile.text();
         lyrics = parseLRC(lrcContent);
@@ -549,6 +656,23 @@ export default function AudioPlayerPanel() {
           lrcReader.readAsDataURL(lrcFile);
         });
       }
+
+      // 读取音频文件
+      const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as ArrayBuffer);
+        reader.onerror = (e) => reject(reader.error);
+        reader.readAsArrayBuffer(audioFile);
+      });
+
+      // 保存到 IndexedDB
+      const mimeType = audioFile.type || (audioFile.name.toLowerCase().endsWith('.mkv') ? 'video/x-matroska' : 'audio/mpeg');
+      await audioStore.getState().addSong({
+        name: audioFile.name.replace(/\.[^/.]+$/, ''),
+        audioDuration: 0,
+        lyricFile,
+        lyrics,
+      }, arrayBuffer, mimeType);
 
       // 获取时长（可选，不影响保存）
       const isVideo = videoExtensions.some(ext => audioFile.name.toLowerCase().endsWith(ext));
@@ -563,10 +687,10 @@ export default function AudioPlayerPanel() {
             mediaEl.addEventListener('error', () => resolve(0));
           });
           if (duration > 0) {
-            console.log('[AudioPlayerPanel] Got duration:', duration);
+            // Update song duration in store
           }
         } catch (e) {
-          console.log('[AudioPlayerPanel] Could not get duration');
+          // Ignore duration errors
         }
       }
     } catch (err) {
@@ -837,19 +961,66 @@ export default function AudioPlayerPanel() {
               <div className="song-player">
                 <div className="song-name">{currentSong.name}</div>
 
+                {/* Lyrics offset controls */}
+                <div className="song-lyric-offset">
+                  <button
+                    className="song-offset-btn"
+                    onClick={() => audioStore.getState().adjustLyricTimeOffset(-0.5)}
+                    title="歌词提前0.5秒"
+                  >
+                    -0.5
+                  </button>
+                  <button
+                    className="song-offset-btn"
+                    onClick={() => audioStore.getState().adjustLyricTimeOffset(-0.1)}
+                    title="歌词提前0.1秒"
+                  >
+                    -0.1
+                  </button>
+                  <span className="song-offset-value">
+                    {lyricTimeOffset > 0 ? '+' : ''}{lyricTimeOffset.toFixed(1)}s
+                  </span>
+                  <button
+                    className="song-offset-btn"
+                    onClick={() => audioStore.getState().adjustLyricTimeOffset(0.1)}
+                    title="歌词延后0.1秒"
+                  >
+                    +0.1
+                  </button>
+                  <button
+                    className="song-offset-btn"
+                    onClick={() => audioStore.getState().adjustLyricTimeOffset(0.5)}
+                    title="歌词延后0.5秒"
+                  >
+                    +0.5
+                  </button>
+                </div>
+
                 {/* Lyrics display */}
-                <div className="lyrics-container">
-                  {currentSong.lyrics.length > 0 ? (
-                    <div className="lyrics">
-                      {currentSong.lyrics.map((line, idx) => (
-                        <div
-                          key={idx}
-                          className={`lyric-line ${idx === currentLyricLine ? 'lyric-line--active' : ''}`}
-                        >
-                          {line.text}
+                <div className="lyrics-container" id="lyrics-container">
+                  {currentSong?.lyrics?.length > 0 ? (
+                    (() => {
+                      const { before, current, after } = getVisibleLyrics(currentSong.lyrics, currentSongTime, lyricTimeOffset);
+                      return (
+                        <div className="lyrics">
+                          {before.map((line, idx) => (
+                            <div key={`before-${idx}`} className="lyric-line lyric-line--passed">
+                              {line.text}
+                            </div>
+                          ))}
+                          {current && (
+                            <div className="lyric-line lyric-line--active" id="lyric-active">
+                              {current.text}
+                            </div>
+                          )}
+                          {after.slice(0, 5).map((line, idx) => (
+                            <div key={`after-${idx}`} className="lyric-line">
+                              {line.text}
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })()
                   ) : (
                     <div className="lyrics-empty">暂无歌词</div>
                   )}
